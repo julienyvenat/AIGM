@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Entity } from '../components/BattleMap';
 
 export type SenderType = 'user' | 'server';
-export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state';
+export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image';
 export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE';
 
 export interface GameMessage {
@@ -17,6 +17,7 @@ export function useGameWebSocket(playerId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [currentSceneImage, setCurrentSceneImage] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -53,6 +54,22 @@ export function useGameWebSocket(playerId: string | null) {
 
           if (data.type === 'combat_state' && Array.isArray(data.entities)) {
             setEntities(data.entities);
+            return;
+          }
+
+
+          if (data.type === 'scene_image' && data.url) {
+            setCurrentSceneImage(data.url);
+
+            // Add local system message
+            const systemMessage: GameMessage = {
+              id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+              sender: 'server',
+              type: 'system',
+              category: 'SYSTEM',
+              message: "Le MJ a partagé une vision...",
+            };
+            setMessages((prev) => [...prev, systemMessage]);
             return;
           }
 
@@ -132,5 +149,9 @@ export function useGameWebSocket(playerId: string | null) {
     }
   }, []);
 
-  return { isConnected, messages, sendMessage, entities };
+  const clearSceneImage = useCallback(() => {
+    setCurrentSceneImage(null);
+  }, []);
+
+  return { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage };
 }
