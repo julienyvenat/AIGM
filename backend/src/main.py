@@ -1,8 +1,20 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
-app = FastAPI(title="RPG AI GameMaster Backend")
+from src.engine.database import init_db
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Démarrage de l'application
+    await init_db()
+    print("Database initialized.")
+    yield
+    # Arrêt de l'application
+    print("Shutting down.")
+
+app = FastAPI(title="RPG AI GameMaster Backend", lifespan=lifespan)
 
 # Configuration CORS pour autoriser les requêtes du frontend
 app.add_middleware(
