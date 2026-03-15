@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useGameWebSocket } from './hooks/useGameWebSocket';
 import { ChatPanel } from './components/ChatPanel';
 import { BattleMap } from './components/BattleMap';
+import { SceneViewer } from './components/SceneViewer';
 
 function App() {
   const [playerIdInput, setPlayerIdInput] = useState('');
   const [playerId, setPlayerId] = useState<string | null>(null);
 
-  const { isConnected, messages, sendMessage, entities } = useGameWebSocket(playerId);
+  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage } = useGameWebSocket(playerId);
 
   const handleConnect = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,8 +63,12 @@ function App() {
         </section>
 
         {/* Right Column: Future Map/Content (2/3) */}
-        <section className="w-2/3 p-6 flex flex-col items-center justify-center bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
+        <section className="w-2/3 p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
           <BattleMap entities={entities} />
+
+          {currentSceneImage && (
+            <SceneViewer imageUrl={currentSceneImage} onClose={clearSceneImage} />
+          )}
         </section>
       </main>
     </div>
