@@ -1,5 +1,11 @@
 import json
 import logging
+import asyncio
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement en premier
+load_dotenv()
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,9 +15,35 @@ from agents.router import analyze_player_intent, IntentType
 from agents.narrator import generate_narrator_response
 from memory.vector_db import get_relevant_context
 
+from agents.image_prompter import generate_image_prompt
+from engine.image_generator import generate_scene_image
+
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Set global pour garder les références des tâches asynchrones (évite le GC)
+background_tasks = set()
+
+async def background_image_generation(description: str, manager: "ConnectionManager"):
+    try:
+        # 1. Génération du prompt
+        prompt = await generate_image_prompt(description)
+        logger.info(f"Image prompt généré: {prompt}")
+
+        # 2. Génération de l'image
+        image_url = await generate_scene_image(prompt)
+
+        # 3. Broadcast si succès
+        if image_url:
+            logger.info(f"Image générée avec succès: {image_url}")
+            await manager.broadcast({
+                "type": "scene_image",
+                "url": image_url
+            })
+    except Exception as e:
+        logger.error(f"Erreur dans background_image_generation: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -110,6 +142,11 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     }
                 )
 
+                # Lancement de la génération d'image en arrière-plan
+                task = asyncio.create_task(background_image_generation(narrator_reply, manager))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
             elif intent.intent == IntentType.ACTION:
                 # Ouverture d'une session de base de données asynchrone
                 async for session in get_session():
@@ -123,6 +160,11 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         "message": narrator_reply
                     }
                 )
+
+                # Lancement de la génération d'image en arrière-plan
+                task = asyncio.create_task(background_image_generation(narrator_reply, manager))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
