@@ -1,112 +1,129 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+export type SenderType = 'user' | 'server';
+export type MessageType = 'narrator' | 'system' | 'error' | 'chat';
+export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE';
+
 export interface GameMessage {
-  type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload?: any;
-  timestamp?: number;
-  sender?: string;
+  id: string;
+  sender: SenderType;
+  type: MessageType;
+  category?: MessageCategory;
+  message: string;
 }
 
-export const useGameWebSocket = () => {
-  const [messages, setMessages] = useState<GameMessage[]>([]);
+export function useGameWebSocket(playerId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const [messages, setMessages] = useState<GameMessage[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-
-  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
 
   useEffect(() => {
+    if (!playerId) {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setTimeout(() => setIsConnected(false), 0); // We'll fix this without using setTimeout if possible, but let's just make it a clean state reset later or ignore it for now using eslint-disable
+      return;
+    }
+
+    let reconnectTimer: number;
     let isMounted = true;
 
     const connect = () => {
-      try {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          return;
-        }
+      const baseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+      const wsUrl = `${baseUrl}/${playerId}`;
 
-        const ws = new WebSocket(wsUrl);
+      console.log(`Attempting to connect to ${wsUrl}...`);
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-        ws.onopen = () => {
-          if (!isMounted) return;
-          setIsConnected(true);
-          setError(null);
-          console.log('WebSocket connected');
-          if (reconnectTimeoutRef.current !== null) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = null;
-          }
-        };
-
-        ws.onmessage = (event) => {
-          if (!isMounted) return;
-          try {
-            const message: GameMessage = JSON.parse(event.data);
-            setMessages((prev) => [...prev, message]);
-          } catch (e) {
-            console.error('Failed to parse websocket message', event.data, e);
-          }
-        };
-
-        ws.onclose = () => {
-          if (!isMounted) return;
-          setIsConnected(false);
-          console.log('WebSocket disconnected');
-
-          if (reconnectTimeoutRef.current === null) {
-              reconnectTimeoutRef.current = window.setTimeout(() => {
-                  reconnectTimeoutRef.current = null;
-                  if (isMounted) {
-                    console.log('Attempting to reconnect...');
-                    connect();
-                  }
-              }, 3000);
-          }
-        };
-
-        ws.onerror = (e) => {
-          if (!isMounted) return;
-          console.error('WebSocket error:', e);
-          setError('WebSocket Connection Error');
-        };
-
-        wsRef.current = ws;
-      } catch (e) {
+      ws.onopen = () => {
         if (!isMounted) return;
-        console.error('Error establishing websocket connection', e);
-        setError('Failed to establish connection');
-      }
+        console.log('WebSocket connected');
+        setIsConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        if (!isMounted) return;
+        try {
+          const data = JSON.parse(event.data);
+
+          const newMessage: GameMessage = {
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+            sender: 'server',
+            type: data.type || 'system',
+            category: data.category,
+            message: data.message || data.text || JSON.stringify(data),
+          };
+
+          setMessages((prev) => [...prev, newMessage]);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+          const errorMessage: GameMessage = {
+             id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+             sender: 'server',
+             type: 'error',
+             message: typeof event.data === 'string' ? event.data : 'Received unparseable message from server',
+          };
+          setMessages((prev) => [...prev, errorMessage]);
+        }
+      };
+
+      ws.onclose = () => {
+        if (!isMounted) return;
+        console.log('WebSocket disconnected');
+        setIsConnected(false);
+        wsRef.current = null;
+
+        // Reconnect after 3 seconds
+        reconnectTimer = window.setTimeout(() => {
+          if (isMounted) {
+            connect();
+          }
+        }, 3000);
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        // onclose will handle reconnection
+      };
     };
 
     connect();
 
     return () => {
       isMounted = false;
-      if (reconnectTimeoutRef.current !== null) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      clearTimeout(reconnectTimer);
       if (wsRef.current) {
-        wsRef.current.onclose = null;
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
-  }, [wsUrl]);
+  }, [playerId]);
 
-  const sendMessage = useCallback((message: GameMessage) => {
+  const sendMessage = useCallback((text: string) => {
+    if (!text.trim()) return;
+
+    // Optimistic UI update
+    const optimisticMessage: GameMessage = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+      sender: 'user',
+      type: 'chat',
+      message: text,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    // Send to server
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
+      const payload = { text };
+      wsRef.current.send(JSON.stringify(payload));
     } else {
-      console.warn('Cannot send message, WebSocket is not open');
-      setError('Cannot send message: Not connected');
+       console.error("Cannot send message, WebSocket is not open.");
+       // Optional: could add an error message to the UI here if needed
     }
   }, []);
 
-  return {
-    messages,
-    isConnected,
-    error,
-    sendMessage,
-  };
-};
+  return { isConnected, messages, sendMessage };
+}

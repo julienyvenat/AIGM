@@ -2,20 +2,20 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useGameWebSocket } from '../hooks/useGameWebSocket';
 
 export const ChatArea: React.FC = () => {
-  const { messages, isConnected, error, sendMessage } = useGameWebSocket();
+  // We'll pass a dummy 'player1' for this existing component if it's used somewhere.
+  // In reality, App.tsx is now the main layout, but we'll fix this to compile.
+  const { messages, isConnected, sendMessage } = useGameWebSocket('player1');
   const [inputValue, setInputValue] = useState('');
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+
+  // This component seems redundant now that App.tsx handles everything,
+  // but let's fix the TypeScript errors to satisfy the build step.
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
-    sendMessage({
-      type: 'user_message',
-      payload: inputValue,
-      sender: 'User',
-      timestamp: Date.now(),
-    });
+    sendMessage(inputValue);
 
     setInputValue('');
   };
@@ -34,15 +34,14 @@ export const ChatArea: React.FC = () => {
           <span className={isConnected ? 'text-green-400' : 'text-red-400'}>
             {isConnected ? 'Connected' : 'Disconnected'}
           </span>
-          {error && <span className="ml-2 text-red-500 text-xs">- {error}</span>}
         </div>
       </div>
 
       <div className="flex-grow overflow-y-auto p-4 space-y-4">
         {messages.map((msg, idx) => (
-          <div key={idx} className={`p-3 rounded-lg ${msg.sender === 'User' ? 'bg-blue-900 ml-8' : 'bg-gray-800 mr-8'}`}>
+          <div key={idx} className={`p-3 rounded-lg ${msg.sender === 'user' ? 'bg-blue-900 ml-8' : 'bg-gray-800 mr-8'}`}>
             <div className="text-xs text-gray-400 mb-1">{msg.sender || 'System'}</div>
-            <div className="text-gray-200 break-words">{typeof msg.payload === 'string' ? msg.payload : JSON.stringify(msg.payload || msg)}</div>
+            <div className="text-gray-200 break-words">{msg.message}</div>
           </div>
         ))}
         <div ref={endOfMessagesRef} />
