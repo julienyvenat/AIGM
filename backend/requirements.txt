@@ -7,3 +7,4 @@ sqlmodel
 aiosqlite
 pytest
 pytest-asyncio
+chromadb
