@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import type { Entity } from '../components/BattleMap';
 
 export type SenderType = 'user' | 'server';
-export type MessageType = 'narrator' | 'system' | 'error' | 'chat';
+export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state';
 export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE';
 
 export interface GameMessage {
@@ -15,6 +16,7 @@ export interface GameMessage {
 export function useGameWebSocket(playerId: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -48,6 +50,11 @@ export function useGameWebSocket(playerId: string | null) {
         if (!isMounted) return;
         try {
           const data = JSON.parse(event.data);
+
+          if (data.type === 'combat_state' && Array.isArray(data.entities)) {
+            setEntities(data.entities);
+            return;
+          }
 
           const newMessage: GameMessage = {
             id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
@@ -125,5 +132,5 @@ export function useGameWebSocket(playerId: string | null) {
     }
   }, []);
 
-  return { isConnected, messages, sendMessage };
+  return { isConnected, messages, sendMessage, entities };
 }

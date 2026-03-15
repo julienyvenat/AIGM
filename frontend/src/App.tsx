@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useGameWebSocket } from './hooks/useGameWebSocket';
 import { ChatPanel } from './components/ChatPanel';
+import { BattleMap } from './components/BattleMap';
 
 function App() {
   const [playerIdInput, setPlayerIdInput] = useState('');
   const [playerId, setPlayerId] = useState<string | null>(null);
 
-  const { isConnected, messages, sendMessage } = useGameWebSocket(playerId);
+  const { isConnected, messages, sendMessage, entities } = useGameWebSocket(playerId);
 
   const handleConnect = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,11 +62,8 @@ function App() {
         </section>
 
         {/* Right Column: Future Map/Content (2/3) */}
-        <section className="w-2/3 p-6 flex items-center justify-center bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-500 mb-2">Carte / Plateau de Jeu</h2>
-            <p className="text-gray-600 italic">Cet espace sera réservé à l'affichage visuel.</p>
-          </div>
+        <section className="w-2/3 p-6 flex flex-col items-center justify-center bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
+          <BattleMap entities={entities} />
         </section>
       </main>
     </div>
