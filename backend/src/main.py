@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from engine.database import init_db, get_session
 from agents.router import analyze_player_intent, IntentType
+from agents.narrator import generate_narrator_response
 from memory.vector_db import get_relevant_context
 
 # Configuration du logging
@@ -96,30 +97,44 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             elif intent.intent == IntentType.ROLEPLAY:
                 # Récupération de la mémoire RAG
                 contexte_rag = await get_relevant_context(player_text, filter_type='lore')
-                # Envoi du contexte au client (bouchon temporaire)
+                # Appel de l'Agent Narrateur avec contexte
+                async for session in get_session():
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag)
+
+                # Diffusion du message à tous les joueurs
+                await manager.broadcast(
+                    {
+                        "type": "narrator",
+                        "category": intent.intent.value,
+                        "message": narrator_reply
+                    }
+                )
+
+            elif intent.intent == IntentType.ACTION:
+                # Ouverture d'une session de base de données asynchrone
+                async for session in get_session():
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text)
+
+                # Diffusion du message à tous les joueurs
+                await manager.broadcast(
+                    {
+                        "type": "narrator",
+                        "category": intent.intent.value,
+                        "message": narrator_reply
+                    }
+                )
+
+            elif intent.intent == IntentType.SYSTEM:
+                # Ouverture d'une session de base de données asynchrone
+                async for session in get_session():
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text)
+
+                # Envoi du message au joueur concerné
                 await manager.send_personal_message(
                     {
                         "type": "narrator",
-                        "context": contexte_rag,
-                        "message": "En attente de l'Agent Narrateur"
-                    },
-                    websocket
-                )
-
-            elif intent.intent in (IntentType.ACTION, IntentType.SYSTEM):
-                # Ouverture d'une session de base de données asynchrone
-                async for session in get_session():
-                    # TODO: Implémentation de la logique de résolution d'action
-                    pass
-
-                # Accusé de réception (bouchon temporaire)
-                await manager.send_personal_message(
-                    {
-                        "type": "system",
                         "category": intent.intent.value,
-                        "action": intent.action_type,
-                        "target": intent.target,
-                        "message": "Action transmise au moteur"
+                        "message": narrator_reply
                     },
                     websocket
                 )
