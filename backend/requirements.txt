@@ -3,3 +3,7 @@ pydantic>=2.0.0
 fastapi
 uvicorn[standard]
 websockets
+sqlmodel
+aiosqlite
+pytest
+pytest-asyncio
