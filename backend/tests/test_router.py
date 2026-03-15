@@ -23,10 +23,10 @@ def test_analyze_player_intent_success(mock_parse):
 
     result = analyze_player_intent("Je tape le gobelin")
 
-    assert result['intent'] == IntentType.ACTION
-    assert result['summary'] == "Attaque au corps à corps"
-    assert result['target'] == "gobelin"
-    assert result['action_type'] == "attack"
+    assert result.intent == IntentType.ACTION
+    assert result.summary == "Attaque au corps à corps"
+    assert result.target == "gobelin"
+    assert result.action_type == "attack"
 
 @patch('src.agents.router.client.beta.chat.completions.parse')
 def test_analyze_player_intent_failure(mock_parse):
@@ -35,7 +35,7 @@ def test_analyze_player_intent_failure(mock_parse):
 
     result = analyze_player_intent("Je tape le gobelin")
 
-    assert result['intent'] == IntentType.IGNORE
-    assert result['summary'] == "Erreur de parsing"
-    assert result['target'] is None
-    assert result['action_type'] == "null"
+    assert result.intent == IntentType.IGNORE
+    assert result.summary == "Erreur de parsing"
+    assert result.target is None
+    assert result.action_type == "null"

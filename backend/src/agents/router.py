@@ -28,7 +28,7 @@ class PlayerIntent(BaseModel):
 # Assurez-vous d'avoir configuré la variable d'environnement OPENAI_API_KEY
 client = OpenAI()
 
-def analyze_player_intent(text: str) -> dict:
+def analyze_player_intent(text: str) -> PlayerIntent:
     """
     Analyse la phrase transcrite d'un joueur et classifie l'intention.
     Retourne un dictionnaire avec 'intent', 'summary', 'target' et 'action_type'.
@@ -106,7 +106,7 @@ Sortie :
         if parsed_response is None:
             raise ValueError("L'IA n'a pas pu générer un objet JSON valide.")
 
-        return parsed_response.model_dump()
+        return parsed_response
 
     except Exception:
         return PlayerIntent(
@@ -114,4 +114,4 @@ Sortie :
             summary="Erreur de parsing",
             target=None,
             action_type="null"
-        ).model_dump()
+        )
