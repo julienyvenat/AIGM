@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
 import google.generativeai as genai
 
-from backend.src.engine.tools import get_combat_state, move_entity, execute_attack, roll_dice
+from engine.tools import get_combat_state, move_entity, execute_attack, roll_dice
 
 logger = logging.getLogger(__name__)
 
