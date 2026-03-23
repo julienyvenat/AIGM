@@ -55,6 +55,10 @@ async def lifespan(app: FastAPI):
     logger.info("Arrêt de l'application...")
 
 app = FastAPI(lifespan=lifespan)
+import os
+from fastapi.staticfiles import StaticFiles
+os.makedirs("backend/images", exist_ok=True)
+app.mount("/images", StaticFiles(directory="backend/images"), name="images")
 
 # Configuration CORS pour autoriser toutes les origines (développement local)
 app.add_middleware(
@@ -190,3 +194,10 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+# Expose images directory to frontend
+from fastapi.staticfiles import StaticFiles
+import os
+
+os.makedirs("backend/images", exist_ok=True)
+app.mount("/images", StaticFiles(directory="backend/images"), name="images")

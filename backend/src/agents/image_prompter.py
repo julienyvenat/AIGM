@@ -1,7 +1,16 @@
+import os
+import json
 from pydantic import BaseModel
 from openai import AsyncOpenAI
+import google.generativeai as genai
 
-client = AsyncOpenAI()
+client = AsyncOpenAI() if os.environ.get("OPENAI_API_KEY") else None
+
+if os.environ.get("GOOGLE_API_KEY"):
+    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
 
 class ImagePrompt(BaseModel):
     prompt: str
@@ -17,14 +26,31 @@ async def generate_image_prompt(scene_description: str) -> str:
         '"digital painting, dark fantasy art style, highly detailed, masterpiece". Ne renvoie QUE le prompt, rien d\'autre.'
     )
 
-    response = await client.beta.chat.completions.parse(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": scene_description}
-        ],
-        response_format=ImagePrompt,
-        temperature=0.7,
-    )
-
-    return response.choices[0].message.parsed.prompt
+    if LLM_PROVIDER == "gemini":
+        model = genai.GenerativeModel(
+            model_name=GEMINI_MODEL,
+            system_instruction=system_prompt
+        )
+        response = await model.generate_content_async(
+            scene_description,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=ImagePrompt,
+                temperature=0.7,
+            )
+        )
+        parsed_dict = json.loads(response.text)
+        return parsed_dict.get("prompt", "")
+    else:
+        if not client:
+            raise ValueError("OPENAI_API_KEY is not set.")
+        response = await client.beta.chat.completions.parse(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": scene_description}
+            ],
+            response_format=ImagePrompt,
+            temperature=0.7,
+        )
+        return response.choices[0].message.parsed.prompt

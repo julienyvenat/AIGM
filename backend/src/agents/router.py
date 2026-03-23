@@ -1,8 +1,10 @@
+import os
 import json
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 from openai import OpenAI
+import google.generativeai as genai
 
 class IntentType(str, Enum):
     ACTION = "ACTION"
@@ -25,8 +27,15 @@ class PlayerIntent(BaseModel):
         description="Le type d'action (attack, move, skill_check, dialogue, question, null)"
     )
 
-# Assurez-vous d'avoir configuré la variable d'environnement OPENAI_API_KEY
-client = OpenAI()
+# Configuration OpenAI (only instantiated if needed or if key exists)
+client = OpenAI() if os.environ.get("OPENAI_API_KEY") else None
+
+# Configuration Gemini
+if os.environ.get("GOOGLE_API_KEY"):
+    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
 
 def analyze_player_intent(text: str) -> PlayerIntent:
     """
@@ -93,22 +102,41 @@ Sortie :
 }"""
 
     try:
-        response = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}
-            ],
-            response_format=PlayerIntent,
-        )
+        if LLM_PROVIDER == "gemini":
+            model = genai.GenerativeModel(
+                model_name=GEMINI_MODEL,
+                system_instruction=system_prompt
+            )
+            response = model.generate_content(
+                text,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    response_schema=PlayerIntent,
+                )
+            )
+            parsed_dict = json.loads(response.text)
+            return PlayerIntent(**parsed_dict)
 
-        parsed_response = response.choices[0].message.parsed
-        if parsed_response is None:
-            raise ValueError("L'IA n'a pas pu générer un objet JSON valide.")
+        else: # Default to openai
+            if not client:
+                raise ValueError("OPENAI_API_KEY is not set.")
+            response = client.beta.chat.completions.parse(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ],
+                response_format=PlayerIntent,
+            )
 
-        return parsed_response
+            parsed_response = response.choices[0].message.parsed
+            if parsed_response is None:
+                raise ValueError("L'IA n'a pas pu générer un objet JSON valide.")
 
-    except Exception:
+            return parsed_response
+
+    except Exception as e:
+        print(f"Error in router: {e}")
         return PlayerIntent(
             intent=IntentType.IGNORE,
             summary="Erreur de parsing",
