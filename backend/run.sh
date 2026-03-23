@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$(dirname "$0")"
 echo "Starting FastAPI Server..."
 # Naviguer dans le dossier src pour éviter les problèmes d'import (si nécessaire, bien que module run marche aussi)
 # ou exécuter uvicorn depuis le dossier racine du projet
