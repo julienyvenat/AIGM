@@ -1,7 +1,8 @@
 import os
 import logging
 from openai import AsyncOpenAI
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import uuid
 
 logging.basicConfig(level=logging.INFO)
@@ -9,36 +10,31 @@ logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI() if os.environ.get("OPENAI_API_KEY") else None
 
-if os.environ.get("GOOGLE_API_KEY"):
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+gemini_client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY")) if os.environ.get("GOOGLE_API_KEY") else None
 
 IMAGE_PROVIDER = os.environ.get("IMAGE_PROVIDER", "openai").lower()
 
-# Required for Imagen via google-generativeai API if available,
-# although Vertex AI SDK is typically required for full Imagen 3 features
+# Required for Imagen via google-genai API if available
 async def _generate_imagen_image(prompt: str) -> str | None:
     try:
-        # Currently the official python sdk `google-generativeai` has limited
-        # direct support for imagen outside of Vertex AI SDK, but we attempt
-        # the standard approach if the library version supports it.
-        # Fallback to local save since Google doesn't return hosted URLs like OpenAI.
+        if not gemini_client:
+            raise ValueError("GOOGLE_API_KEY is not set.")
 
-        # NOTE: Imagen generation usually requires setting project IDs or using Vertex,
-        # but the gemini api key alone sometimes enables it.
-
-        # We will attempt the generate_images method if available
-        # (It depends heavily on the specific module version)
-        result = genai.ImageGenerationModel("imagen-3.0-generate-001").generate_images(
+        # the google-genai library supports imagen using the models.generate_images method
+        result = gemini_client.models.generate_images(
+            model='imagen-3.0-generate-002',
             prompt=prompt,
-            number_of_images=1,
-            aspect_ratio="1:1"
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="1:1"
+            )
         )
 
-        if not result.images:
+        if not result.generated_images:
             return None
 
-        # We need to save the image to serve it, because Google returns bytes, not a URL
-        image_data = result.images[0].image.image_bytes
+        # Google returns bytes in the image object
+        image_data = result.generated_images[0].image.image_bytes
 
         filename = f"{uuid.uuid4().hex}.png"
 

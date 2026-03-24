@@ -11,6 +11,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from engine.database import init_db, get_session
+from engine.models import ChatMessage
+from sqlmodel import select, or_
 from agents.router import analyze_player_intent, IntentType
 from agents.narrator import generate_narrator_response
 from memory.vector_db import get_relevant_context
@@ -101,6 +103,35 @@ manager = ConnectionManager()
 @app.websocket("/ws/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, player_id: str):
     await manager.connect(websocket)
+
+    # Load and send chat history
+    try:
+        async for session in get_session():
+            statement = select(ChatMessage).where(
+                or_(ChatMessage.player_id == player_id, ChatMessage.player_id == None)
+            ).order_by(ChatMessage.timestamp)
+            results = await session.execute(statement)
+            history_msgs = results.scalars().all()
+
+            history_payload = []
+            for msg in history_msgs:
+                history_payload.append({
+                    "id": str(msg.id),
+                    "sender": msg.sender,
+                    "type": msg.type,
+                    "category": msg.category,
+                    "message": msg.content,
+                    "timestamp": msg.timestamp.isoformat()
+                })
+
+            if history_payload:
+                await manager.send_personal_message(
+                    {"type": "history", "messages": history_payload},
+                    websocket
+                )
+    except Exception as e:
+        logger.error(f"Erreur lors du chargement de l'historique pour {player_id}: {e}")
+
     try:
         while True:
             # Réception du message sous forme de texte brut
@@ -122,6 +153,12 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
             logger.info(f"[{player_id}] Dit: {player_text}")
 
+            # Save player message
+            async for session in get_session():
+                user_msg = ChatMessage(player_id=player_id, sender="user", type="chat", content=player_text)
+                session.add(user_msg)
+                await session.commit()
+
             # 2. Analyse de l'intention
             intent = analyze_player_intent(player_text)
             logger.info(f"[{player_id}] Intention détectée: {intent.intent.value} ({intent.action_type})")
@@ -140,11 +177,17 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 # Diffusion du message à tous les joueurs
                 await manager.broadcast(
+
                     {
+
                         "type": "narrator",
+
                         "category": intent.intent.value,
+
                         "message": narrator_reply
+
                     }
+
                 )
 
                 # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
@@ -155,6 +198,20 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
+                # Save narrator broadcast message (player_id=None / "global")
+
+                async for session in get_session():
+
+                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
+
+                    session.add(narrator_msg)
+
+                    await session.commit()
+
+                # Lancement de la génération d'image en arrière-plan
+                task = asyncio.create_task(background_image_generation(narrator_reply, manager))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.ACTION:
                 # Ouverture d'une session de base de données asynchrone
@@ -163,11 +220,17 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 # Diffusion du message à tous les joueurs
                 await manager.broadcast(
+
                     {
+
                         "type": "narrator",
+
                         "category": intent.intent.value,
+
                         "message": narrator_reply
+
                     }
+
                 )
 
                 # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
@@ -178,6 +241,20 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
+                # Save narrator broadcast message (player_id=None / "global")
+
+                async for session in get_session():
+
+                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
+
+                    session.add(narrator_msg)
+
+                    await session.commit()
+
+                # Lancement de la génération d'image en arrière-plan
+                task = asyncio.create_task(background_image_generation(narrator_reply, manager))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
@@ -186,13 +263,30 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 # Envoi du message au joueur concerné
                 await manager.send_personal_message(
+
                     {
+
                         "type": "narrator",
+
                         "category": intent.intent.value,
+
                         "message": narrator_reply
+
                     },
+
                     websocket
+
                 )
+
+                # Save narrator personal message
+
+                async for session in get_session():
+
+                    narrator_msg = ChatMessage(player_id=player_id, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
+
+                    session.add(narrator_msg)
+
+                    await session.commit()
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -24,3 +25,13 @@ class Character(SQLModel, table=True):
     y: int = Field(default=0)
 
     items: List[Item] = Relationship(back_populates="character")
+
+
+class ChatMessage(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    player_id: Optional[str] = Field(default=None, index=True)
+    sender: str
+    type: str
+    category: Optional[str] = Field(default=None)
+    content: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)

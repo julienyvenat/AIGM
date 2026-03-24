@@ -9,4 +9,4 @@ pytest
 pytest-asyncio
 chromadb
 python-dotenv
-google-generativeai
+google-genai

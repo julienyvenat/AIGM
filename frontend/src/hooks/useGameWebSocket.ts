@@ -11,6 +11,7 @@ export interface GameMessage {
   type: MessageType;
   category?: MessageCategory;
   message: string;
+  timestamp?: string;
 }
 
 export function useGameWebSocket(playerId: string | null) {
@@ -51,6 +52,12 @@ export function useGameWebSocket(playerId: string | null) {
         if (!isMounted) return;
         try {
           const data = JSON.parse(event.data);
+
+
+          if (data.type === 'history' && Array.isArray(data.messages)) {
+            setMessages(data.messages);
+            return;
+          }
 
           if (data.type === 'combat_state' && Array.isArray(data.entities)) {
             setEntities(data.entities);

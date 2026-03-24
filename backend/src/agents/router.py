@@ -4,7 +4,8 @@ from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 from openai import OpenAI
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 class IntentType(str, Enum):
     ACTION = "ACTION"
@@ -31,8 +32,7 @@ class PlayerIntent(BaseModel):
 client = OpenAI() if os.environ.get("OPENAI_API_KEY") else None
 
 # Configuration Gemini
-if os.environ.get("GOOGLE_API_KEY"):
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+gemini_client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY")) if os.environ.get("GOOGLE_API_KEY") else None
 
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
@@ -103,13 +103,14 @@ Sortie :
 
     try:
         if LLM_PROVIDER == "gemini":
-            model = genai.GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=system_prompt
-            )
-            response = model.generate_content(
-                text,
-                generation_config=genai.GenerationConfig(
+            if not gemini_client:
+                 raise ValueError("GOOGLE_API_KEY is not set.")
+
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=text,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
                     response_mime_type="application/json",
                     response_schema=PlayerIntent,
                 )
