@@ -80,3 +80,36 @@ async def generate_scene_image(prompt: str) -> str | None:
         except Exception as e:
             logger.error(f"Erreur de génération d'image (OpenAI): {e}")
             return None
+
+import httpx
+
+async def download_image_locally(url: str, filename_prefix: str = "portrait") -> str:
+    """
+    Télécharge une image depuis une URL distante et l'enregistre localement.
+    Retourne l'URL locale relative (ex: /images/portrait_xxx.png).
+    """
+    if not url.startswith("http"):
+        return url # Already local or invalid
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            response.raise_for_status()
+
+            # Simple fallback for extension
+            ext = "png"
+            if "image/jpeg" in response.headers.get("content-type", ""):
+                ext = "jpg"
+
+            filename = f"{filename_prefix}_{uuid.uuid4().hex}.{ext}"
+            os.makedirs("backend/images", exist_ok=True)
+            filepath = os.path.join("backend/images", filename)
+
+            with open(filepath, "wb") as f:
+                f.write(response.content)
+
+            logger.info(f"Image téléchargée avec succès: {filepath}")
+            return f"/images/{filename}"
+    except Exception as e:
+        logger.error(f"Erreur lors du téléchargement de l'image {url}: {e}")
+        return url # Fallback to original URL on failure

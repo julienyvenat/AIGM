@@ -22,5 +22,6 @@ class Character(SQLModel, table=True):
     speed: int
     x: int = Field(default=0)
     y: int = Field(default=0)
+    reference_portrait_url: Optional[str] = Field(default=None)
 
     items: List[Item] = Relationship(back_populates="character")

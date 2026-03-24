@@ -1,6 +1,10 @@
 import os
 import json
+import uuid
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+from engine.models import Character
 from openai import AsyncOpenAI
 import google.generativeai as genai
 
@@ -15,7 +19,7 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
 class ImagePrompt(BaseModel):
     prompt: str
 
-async def generate_image_prompt(scene_description: str) -> str:
+async def generate_image_prompt(session: AsyncSession, player_id: str, scene_description: str) -> str:
     """
     Génère un prompt concis en anglais pour Midjourney/DALL-E 3 à partir d'une description de scène.
     """
@@ -25,6 +29,14 @@ async def generate_image_prompt(scene_description: str) -> str:
         'se concentrer sur le sujet, l\'arrière-plan, l\'éclairage. Ajoute toujours à la fin du prompt le style suivant : '
         '"digital painting, dark fantasy art style, highly detailed, masterpiece". Ne renvoie QUE le prompt, rien d\'autre.'
     )
+
+    try:
+        player_uuid = uuid.UUID(player_id)
+        char = await session.get(Character, player_uuid)
+        if char and char.reference_portrait_url:
+            system_prompt += f"\n\nVoici le portrait de référence de notre héros : {char.reference_portrait_url}. Assure-toi que le personnage principal de la scène que tu décris lui ressemble trait pour trait (classe, visage, armure)."
+    except Exception as e:
+        print(f"Error fetching character portrait for player {player_id}: {e}")
 
     if LLM_PROVIDER == "gemini":
         model = genai.GenerativeModel(

@@ -43,7 +43,8 @@ async def get_combat_state(session: AsyncSession) -> list[dict]:
             "max_hp": char.max_hp,
             "x": char.x,
             "y": char.y,
-            "is_pc": char.is_pc
+            "is_pc": char.is_pc,
+            "reference_portrait_url": char.reference_portrait_url
         })
     return state
 
