@@ -105,6 +105,35 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+
+@app.get("/characters/by-name/{name}")
+async def get_or_create_character_by_name(name: str):
+    try:
+        from engine.database import get_session
+        from sqlmodel import select
+        async for session in get_session():
+            statement = select(Character).where(Character.name == name)
+            result = await session.execute(statement)
+            character = result.scalars().first()
+
+            if not character:
+                character = Character(
+                    name=name,
+                    is_pc=True,
+                    hp=20,
+                    max_hp=20,
+                    armor_class=10,
+                    speed=30
+                )
+                session.add(character)
+                await session.commit()
+                await session.refresh(character)
+
+            return character
+    except Exception as e:
+        logger.error(f"Erreur get_or_create_character_by_name: {e}")
+        return {"error": str(e)}
+
 class PortraitRequest(BaseModel):
     description: str
 

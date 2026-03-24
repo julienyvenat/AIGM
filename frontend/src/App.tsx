@@ -3,18 +3,56 @@ import { useGameWebSocket } from './hooks/useGameWebSocket';
 import { ChatPanel } from './components/ChatPanel';
 import { BattleMap } from './components/BattleMap';
 import { SceneViewer } from './components/SceneViewer';
+import { CharacterManager } from './components/CharacterManager';
+
+interface Character {
+  id: string;
+  name: string;
+  hp: number;
+  max_hp: number;
+  armor_class: number;
+  speed: number;
+  reference_portrait_url: string | null;
+}
 
 function App() {
   const [playerIdInput, setPlayerIdInput] = useState('');
-  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [character, setCharacter] = useState<Character | null>(null);
+  const [showCharacterManager, setShowCharacterManager] = useState(false);
+  const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
 
-  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage } = useGameWebSocket(playerId);
+  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage } = useGameWebSocket(activePlayerId);
 
-  const handleConnect = (e: React.FormEvent) => {
+  const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (playerIdInput.trim()) {
-      setPlayerId(playerIdInput.trim());
+    if (!playerIdInput.trim()) return;
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/characters/by-name/${playerIdInput.trim()}`);
+      if (!response.ok) {
+          console.error("Failed to fetch character");
+          return;
+      }
+      const charData = await response.json();
+
+      setCharacter(charData);
+
+      if (!charData.reference_portrait_url) {
+        setShowCharacterManager(true);
+        setActivePlayerId(null); // Wait for character manager to complete before connecting WS
+      } else {
+        setShowCharacterManager(false);
+        setActivePlayerId(charData.id); // Connect WS immediately if portrait exists
+      }
+    } catch (error) {
+      console.error("Error fetching character:", error);
     }
+  };
+
+  const handleCharacterManagerComplete = (updatedCharacter: Character) => {
+    setCharacter(updatedCharacter);
+    setShowCharacterManager(false);
+    setActivePlayerId(updatedCharacter.id); // Now we connect to the WebSocket
   };
 
   return (
@@ -70,6 +108,14 @@ function App() {
             <SceneViewer imageUrl={currentSceneImage} onClose={clearSceneImage} />
           )}
         </section>
+
+        {/* Modals */}
+        {showCharacterManager && character && (
+          <CharacterManager
+            character={character}
+            onComplete={handleCharacterManagerComplete}
+          />
+        )}
       </main>
     </div>
   );

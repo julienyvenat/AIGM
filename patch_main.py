@@ -1,85 +1,45 @@
 import re
 
-with open("backend/src/main.py", "r") as f:
+with open('backend/src/main.py', 'r') as f:
     content = f.read()
 
-# Add necessary imports
-imports = """from pydantic import BaseModel
-from engine.image_generator import generate_scene_image, download_image_locally
-from engine.models import Character"""
-
-content = content.replace("from engine.image_generator import generate_scene_image", imports)
-
-# Update background_image_generation signature and logic
-old_func = "async def background_image_generation(description: str, manager: \"ConnectionManager\"):"
-new_func = "async def background_image_generation(player_id: str, description: str, manager: \"ConnectionManager\"):"
-content = content.replace(old_func, new_func)
-
-old_logic = "prompt = await generate_image_prompt(description)"
-new_logic = """async for session in get_session():
-            prompt = await generate_image_prompt(session, player_id, description)
-            break"""
-content = content.replace(old_logic, new_logic)
-
-# Update calls to background_image_generation
-content = content.replace(
-    "task = asyncio.create_task(background_image_generation(narrator_reply, manager))",
-    "task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))"
-)
-
-# Add Pydantic models for new routes
-routes = """
-class PortraitRequest(BaseModel):
-    description: str
-
-class ReferenceSetRequest(BaseModel):
-    reference_portrait_url: str
-
-@app.post("/characters/generate-portrait")
-async def generate_portrait(request: PortraitRequest):
-    \"\"\"Génère un portrait de personnage basé sur une description textuelle et le sauvegarde localement.\"\"\"
+get_by_name_route = """
+@app.get("/characters/by-name/{name}")
+async def get_or_create_character_by_name(name: str):
     try:
-        # On utilise le même prompt generator mais orienté "portrait"
-        # On pourrait aussi faire un prompt brut, pour faire simple on l'envoie direct à DALL-E / Imagen
-        prompt = f"Character portrait, D&D style, fantasy RPG portrait. {request.description}. high quality, digital painting, detailed face"
-
-        image_url = await generate_scene_image(prompt)
-        if not image_url:
-            return {"error": "Failed to generate image"}
-
-        local_url = await download_image_locally(image_url, "portrait")
-        return {"reference_portrait_url": local_url}
-
-    except Exception as e:
-        logger.error(f"Erreur generate_portrait: {e}")
-        return {"error": str(e)}
-
-@app.put("/characters/{character_id}/set-reference")
-async def set_reference_portrait(character_id: str, request: ReferenceSetRequest):
-    \"\"\"Met à jour l'URL du portrait de référence d'un personnage.\"\"\"
-    try:
-        from sqlalchemy.ext.asyncio import AsyncSession
         from engine.database import get_session
-        import uuid
-
+        from sqlmodel import select
         async for session in get_session():
-            char = await session.get(Character, uuid.UUID(character_id))
-            if not char:
-                return {"error": f"Character {character_id} not found"}
+            statement = select(Character).where(Character.name == name)
+            result = await session.execute(statement)
+            character = result.scalars().first()
 
-            char.reference_portrait_url = request.reference_portrait_url
-            session.add(char)
-            await session.commit()
-            return {"status": "success", "reference_portrait_url": char.reference_portrait_url}
+            if not character:
+                character = Character(
+                    name=name,
+                    is_pc=True,
+                    hp=20,
+                    max_hp=20,
+                    armor_class=10,
+                    speed=30
+                )
+                session.add(character)
+                await session.commit()
+                await session.refresh(character)
 
+            return character
     except Exception as e:
-        logger.error(f"Erreur set_reference_portrait: {e}")
+        logger.error(f"Erreur get_or_create_character_by_name: {e}")
         return {"error": str(e)}
 
-@app.websocket("/ws/{player_id}")
 """
 
-content = content.replace("@app.websocket(\"/ws/{player_id}\")", routes)
-
-with open("backend/src/main.py", "w") as f:
-    f.write(content)
+# Insert the new route right before the existing /characters routes
+match = re.search(r'class PortraitRequest\(BaseModel\):', content)
+if match:
+    new_content = content[:match.start()] + get_by_name_route + content[match.start():]
+    with open('backend/src/main.py', 'w') as f:
+        f.write(new_content)
+    print("Patch applied.")
+else:
+    print("Could not find PortraitRequest")
