@@ -7,7 +7,8 @@ Artificial Intelligence Game Master for RPG
 cd backend
 pip install -r requirements.txt
 python -m src.scripts.seed_data
-uvicorn src.main:app --reload
+cd ..
+backend/run.sh
 ```
 
 ## Installation et lancement du Frontend
