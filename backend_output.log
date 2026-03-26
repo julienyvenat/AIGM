@@ -1,0 +1,30 @@
+Starting FastAPI Server...
+INFO:     Will watch for changes in these directories: ['/app/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [11636] using WatchFiles
+INFO:     Started server process [11773]
+INFO:     Waiting for application startup.
+INFO:main:Initialisation de la base de données...
+2026-03-26 16:43:44,094 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-03-26 16:43:44,095 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("item")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("item")
+2026-03-26 16:43:44,095 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-03-26 16:43:44,098 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("character")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("character")
+2026-03-26 16:43:44,098 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-03-26 16:43:44,099 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("chatmessage")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("chatmessage")
+2026-03-26 16:43:44,099 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-03-26 16:43:44,100 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:main:Arrêt de l'application...
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11773]
+INFO:     Stopping reloader process [11636]
