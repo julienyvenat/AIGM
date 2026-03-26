@@ -18,3 +18,5 @@ yarn install
 yarn dev
 ```
 
+Modifier le `frontend/.env` afin d'y insérer le bon nom de domaine du backend.
+
