@@ -4,7 +4,7 @@ import logging
 from enum import Enum
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger(__name__)
 

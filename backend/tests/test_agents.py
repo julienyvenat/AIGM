@@ -17,7 +17,7 @@ async def test_generate_image_prompt_gemini(mock_gemini_client):
     mock_response.text = '{"prompt": "A beautiful landscape"}'
     mock_gemini_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
-    result = await generate_image_prompt("Un beau paysage")
+    result = await generate_image_prompt(MagicMock(), "player_id", "Un beau paysage")
 
     assert result == "A beautiful landscape"
 
