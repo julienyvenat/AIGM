@@ -10,9 +10,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from src.memory.vector_db import add_to_memory
-from src.engine.database import init_db, get_session
-from src.engine.models import Character, Item
+from memory.vector_db import add_to_memory
+from engine.database import init_db, get_session
+from engine.models import Character, Item
 
 async def main():
     logger.info("Starting seed script...")

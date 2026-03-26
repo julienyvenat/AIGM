@@ -1,8 +1,8 @@
 import pytest
 from uuid import uuid4
 from sqlmodel import select
-from src.engine.models import Character, Item
-from src.engine.tools import execute_attack, move_entity, roll_dice
+from engine.models import Character, Item
+from engine.tools import execute_attack, move_entity, roll_dice
 
 @pytest.mark.asyncio
 async def test_execute_attack_with_weapon(db_session, monkeypatch):
@@ -14,7 +14,7 @@ async def test_execute_attack_with_weapon(db_session, monkeypatch):
             return 8   # Max dégâts
         return 1
 
-    monkeypatch.setattr("src.engine.tools.roll_dice", mock_roll_dice)
+    monkeypatch.setattr("engine.tools.roll_dice", mock_roll_dice)
 
     attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30)
     target = Character(name="Target", hp=10, max_hp=10, armor_class=10, speed=30)
@@ -44,7 +44,7 @@ async def test_execute_attack_unarmed_and_hp_not_negative(db_session, monkeypatc
             return 4
         return 1
 
-    monkeypatch.setattr("src.engine.tools.roll_dice", mock_roll_dice)
+    monkeypatch.setattr("engine.tools.roll_dice", mock_roll_dice)
 
     attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30)
     target = Character(name="Weak Target", hp=2, max_hp=2, armor_class=10, speed=30)

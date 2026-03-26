@@ -12,7 +12,7 @@ import chromadb
 # que l'initialisation du module (au chargement) utilisera le fallback par défaut.
 os.environ.pop("OPENAI_API_KEY", None)
 
-from src.memory import vector_db
+from memory import vector_db
 
 # On utilise pytest-asyncio
 pytestmark = pytest.mark.asyncio
