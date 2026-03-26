@@ -1,10 +1,15 @@
 import asyncio
 import uuid
 import logging
+import sys
+import os
 from dotenv import load_dotenv
 
 # Load environment variables first
 load_dotenv()
+
+# Add backend/src to sys.path so it resolves imports correctly when executed from anywhere
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
