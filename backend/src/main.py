@@ -275,7 +275,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
                 scene_decision = await analyze_scene(narrator_reply)
                 if scene_decision.decision == ImageDecision.GENERATE:
-                    task = asyncio.create_task(background_image_generation(narrator_reply, manager))
+                    task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:
@@ -318,7 +318,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
                 scene_decision = await analyze_scene(narrator_reply)
                 if scene_decision.decision == ImageDecision.GENERATE:
-                    task = asyncio.create_task(background_image_generation(narrator_reply, manager))
+                    task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:

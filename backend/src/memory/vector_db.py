@@ -13,6 +13,7 @@ VALID_MEMORY_TYPES = {"lore", "scenario", "session_log"}
 # Variable globale pour l'instance du client et de la collection
 client = None
 collection = None
+_embedding_function = None  # Garder trace de la fonction utilisée
 
 # Fonction d'embedding par défaut (utilisée si OpenAI API KEY est présente)
 def get_embedding_function():
@@ -26,7 +27,8 @@ def get_embedding_function():
 
 def _get_or_init_collection():
     """Initialise de façon synchrone et paresseuse le client et la collection"""
-    global client, collection
+    global client, collection, _embedding_function
+    
     if collection is not None:
         return collection
 
@@ -36,12 +38,30 @@ def _get_or_init_collection():
         # Initialisation du client persistant
         client = chromadb.PersistentClient(path=CHROMA_DATA_DIR)
 
-    ef = get_embedding_function()
-    if ef:
-        collection = client.get_or_create_collection(name="rpg_memory", embedding_function=ef)
-    else:
-        # Fallback aux embeddings par défaut de ChromaDB si pas de clé API OpenAI
-        collection = client.get_or_create_collection(name="rpg_memory")
+    _embedding_function = get_embedding_function()
+    
+    try:
+        # Essayer de récupérer la collection existante d'abord
+        if _embedding_function:
+            collection = client.get_or_create_collection(
+                name="rpg_memory", 
+                embedding_function=_embedding_function,
+                metadata={"hnsw:space": "cosine"}
+            )
+        else:
+            collection = client.get_or_create_collection(
+                name="rpg_memory",
+                metadata={"hnsw:space": "cosine"}
+            )
+    except Exception as e:
+        # Si erreur de conflit, essayer sans spécifier l'embedding function
+        import logging
+        logging.warning(f"Erreur lors de l'initialisation de la collection: {e}. Tentative de récupération sans embedding function...")
+        try:
+            collection = client.get_collection(name="rpg_memory")
+        except Exception as e2:
+            # Si la collection existe pas du tout, la créer sans embedding function
+            collection = client.create_collection(name="rpg_memory", metadata={"hnsw:space": "cosine"})
 
     return collection
 
