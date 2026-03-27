@@ -21,3 +21,4 @@ yarn dev
 
 Modifier le `frontend/.env` afin d'y insérer le bon nom de domaine du backend.
 
+Coper le fichier `backend/.env.exemple` vers `backend/.env` et renseignez les variables.

@@ -54,6 +54,8 @@ Tu dois classer l'entrée du joueur dans l'UNE de ces 4 catégories exactes :
 3. "SYSTEM" : Le joueur pose une question "hors personnage" (méta) sur les règles, son inventaire ou son état (ex: "Combien de points de vie me reste-t-il ?", "Est-ce que j'ai une potion ?").
 4. "IGNORE" : Le joueur fait un bruit, parle à quelqu'un en dehors du jeu, ou dit quelque chose qui ne concerne pas la partie (ex: "Je vais chercher une pizza", "Tu m'entends sur Discord ?").
 
+Attention : Si le message de l'utilisateur est court mais qu'il répond logiquement à une question posée par le Maître du Jeu ou qu'il décrit une action simple dans le contexte de la scène, tu DOIS le classifier en ROLEPLAY ou ACTION, et non en IGNORE. N'utilise IGNORE que pour des messages hors-sujet (HRP) ou des fautes de frappe vides.
+
 # FORMAT DE SORTIE (JSON STRICT)
 Ta réponse doit être uniquement un JSON respectant la structure suivante :
 {
@@ -97,6 +99,24 @@ Sortie :
 {
   "intent": "IGNORE",
   "summary": "Interruption hors jeu",
+  "target": null,
+  "action_type": "null"
+}
+
+Entrée joueur : "un PNJ"
+Sortie :
+{
+  "intent": "ROLEPLAY",
+  "summary": "Le joueur répond au Maître du Jeu de manière contextuelle courte",
+  "target": "PNJ",
+  "action_type": "dialogue"
+}
+
+Entrée joueur : "je lui donne la pièce"
+Sortie :
+{
+  "intent": "ACTION",
+  "summary": "Le joueur donne une pièce",
   "target": null,
   "action_type": "null"
 }"""
