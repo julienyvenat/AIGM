@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useGameWebSocket } from '../hooks/useGameWebSocket';
+import { useGameWebSocket, type GameMessage } from '../hooks/useGameWebSocket';
 
 export const ChatArea: React.FC = () => {
   // We'll pass a dummy 'player1' for this existing component if it's used somewhere.
@@ -11,7 +11,7 @@ export const ChatArea: React.FC = () => {
   // This component seems redundant now that App.tsx handles everything,
   // but let's fix the TypeScript errors to satisfy the build step.
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
@@ -38,9 +38,9 @@ export const ChatArea: React.FC = () => {
       </div>
 
       <div className="flex-grow overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`p-3 rounded-lg ${msg.sender === 'user' ? 'bg-blue-900 ml-8' : 'bg-gray-800 mr-8'}`}>
-            <div className="text-xs text-gray-400 mb-1">{msg.sender || 'System'}</div>
+        {messages.map((msg: GameMessage) => (
+          <div key={msg.id} className={`p-3 rounded-lg ${msg.sender === 'user' ? 'bg-blue-900 ml-8' : 'bg-gray-800 mr-8'}`}>
+            <div className="text-xs text-gray-400 mb-1">{msg.sender}</div>
             <div className="text-gray-200 break-words">{msg.message}</div>
           </div>
         ))}
