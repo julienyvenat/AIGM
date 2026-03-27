@@ -259,41 +259,27 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 # Diffusion du message à tous les joueurs
                 await manager.broadcast(
-
                     {
-
                         "type": "narrator",
-
                         "category": intent.intent.value,
-
                         "message": narrator_reply
-
                     }
-
                 )
+
+                # Save narrator broadcast message (player_id=None / "global")
+                async for session in get_session():
+                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
+                    session.add(narrator_msg)
+                    await session.commit()
 
                 # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
                 scene_decision = await analyze_scene(narrator_reply)
-                if scene_decision.decision == ImageDecision.GENERATE:
+                if scene_decision.decision.value == "GENERATE":
                     task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
-                # Save narrator broadcast message (player_id=None / "global")
-
-                async for session in get_session():
-
-                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
-
-                    session.add(narrator_msg)
-
-                    await session.commit()
-
-                # Lancement de la génération d'image en arrière-plan
-                task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
-                background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.ACTION:
                 # Ouverture d'une session de base de données asynchrone
@@ -302,41 +288,27 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 # Diffusion du message à tous les joueurs
                 await manager.broadcast(
-
                     {
-
                         "type": "narrator",
-
                         "category": intent.intent.value,
-
                         "message": narrator_reply
-
                     }
-
                 )
+
+                # Save narrator broadcast message (player_id=None / "global")
+                async for session in get_session():
+                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
+                    session.add(narrator_msg)
+                    await session.commit()
 
                 # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
                 scene_decision = await analyze_scene(narrator_reply)
-                if scene_decision.decision == ImageDecision.GENERATE:
+                if scene_decision.decision.value == "GENERATE":
                     task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
-                # Save narrator broadcast message (player_id=None / "global")
-
-                async for session in get_session():
-
-                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
-
-                    session.add(narrator_msg)
-
-                    await session.commit()
-
-                # Lancement de la génération d'image en arrière-plan
-                task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
-                background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
