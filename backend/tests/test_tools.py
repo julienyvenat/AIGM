@@ -86,3 +86,18 @@ async def test_move_entity_too_far(db_session):
     # Distance is max(6, 0) = 6 > 5
     with pytest.raises(ValueError, match="too far"):
         await move_entity(db_session, char.id, 6, 0)
+
+@pytest.mark.asyncio
+async def test_move_entity_boundary(db_session):
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    # Distance is max(5, 5) = 5 == 5 (Boundary case)
+    result = await move_entity(db_session, char.id, 5, 5)
+
+    await db_session.refresh(char)
+    assert char.x == 5
+    assert char.y == 5
+    assert result["status"] == "success"
