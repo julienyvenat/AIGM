@@ -233,7 +233,10 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 )
                 continue # On ignore ce message et on attend le prochain
 
-            logger.info(f"[{player_id}] Dit: {player_text}")
+            # Sanitize player_id and player_text to prevent log injection
+            sanitized_player_id = str(player_id).replace('\n', '\\n').replace('\r', '\\r')
+            sanitized_player_text = str(player_text).replace('\n', '\\n').replace('\r', '\\r')
+            logger.info(f"[{sanitized_player_id}] Dit: {sanitized_player_text}")
 
             # Save player message
             async for session in get_session():
