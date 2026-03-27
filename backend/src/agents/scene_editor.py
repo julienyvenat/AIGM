@@ -32,7 +32,16 @@ async def analyze_scene(text: str) -> SceneEditorResponse:
     Retourne SceneEditorResponse avec 'decision' = GENERATE ou IGNORE.
     En cas d'erreur, retourne IGNORE par défaut.
     """
-    system_prompt = """Tu es un monteur de scène pour un film. Ta mission est de décider si la description narrative du MJ nécessite une nouvelle image visuelle. Une image est nécessaire UNIQUEMENT s'il y a un changement de décor majeur, l'apparition d'un nouveau monstre/PNJ clé, ou le déclenchement d'une action de combat intense. Elle n'est PAS nécessaire pour des dialogues ou des descriptions d'expressions mineures. Ne renvoie QUE "GENERATE" ou "IGNORE" via un objet JSON."""
+    system_prompt = """Tu es un monteur de scène pour un film. Ta mission est de décider si la description narrative du MJ nécessite une nouvelle image visuelle.
+Tu dois choisir "GENERATE" dès qu'il y a un changement de pièce, la découverte d'un nouveau lieu (ex: ouvrir une porte, entrer dans une salle), l'apparition d'un nouveau monstre, ou la rencontre avec un PNJ important (ex: un roi, un boss). Ne choisis "IGNORE" que si les personnages discutent ou font de petites actions en restant exactement dans le même décor sans événement nouveau. Ne renvoie QUE "GENERATE" ou "IGNORE" via un objet JSON.
+
+# EXEMPLES
+Entrée : "Les lourdes portes en chêne cèdent sous votre poussée dans un grincement sinistre, révélant une immense salle du trône baignée par la lumière de la lune. Au fond, le Roi vous observe."
+Sortie : {"decision": "GENERATE"}
+
+Entrée : "L'aubergiste essuie une chope avec un chiffon sale et vous répond en soupirant : 'Les routes ne sont plus sûres mon ami...'"
+Sortie : {"decision": "IGNORE"}
+"""
 
     try:
         if LLM_PROVIDER == "gemini":
