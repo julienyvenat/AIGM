@@ -30,6 +30,23 @@ logger = logging.getLogger(__name__)
 # Set global pour garder les références des tâches asynchrones (évite le GC)
 background_tasks = set()
 
+async def save_chat_message_background(player_id: str | None, sender: str, msg_type: str, content: str, category: str | None = None):
+    """Sauvegarde un message de chat en arrière-plan."""
+    try:
+        async for session in get_session():
+            new_msg = ChatMessage(
+                player_id=player_id,
+                sender=sender,
+                type=msg_type,
+                category=category,
+                content=content
+            )
+            session.add(new_msg)
+            await session.commit()
+            break # On ne veut qu'une seule session
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde du message en arrière-plan: {e}")
+
 async def background_image_generation(player_id: str, description: str, manager: "ConnectionManager"):
     try:
         # 1. Génération du prompt
@@ -235,11 +252,10 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
             logger.info(f"[{player_id}] Dit: {player_text}")
 
-            # Save player message
-            async for session in get_session():
-                user_msg = ChatMessage(player_id=player_id, sender="user", type="chat", content=player_text)
-                session.add(user_msg)
-                await session.commit()
+            # Save player message (background)
+            task = asyncio.create_task(save_chat_message_background(player_id, "user", "chat", player_text))
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
 
             # 2. Analyse de l'intention
             intent = analyze_player_intent(player_text)
@@ -281,6 +297,16 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 else:
                     logger.info("Scene editor decision: IGNORE")
 
+                # Save narrator broadcast message (background)
+                task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
+                # Lancement de la génération d'image en arrière-plan
+                task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
             elif intent.intent == IntentType.ACTION:
                 # Ouverture d'une session de base de données asynchrone
                 async for session in get_session():
@@ -310,6 +336,16 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 else:
                     logger.info("Scene editor decision: IGNORE")
 
+                # Save narrator broadcast message (background)
+                task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
+                # Lancement de la génération d'image en arrière-plan
+                task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
                 async for session in get_session():
@@ -332,15 +368,10 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 )
 
-                # Save narrator personal message
-
-                async for session in get_session():
-
-                    narrator_msg = ChatMessage(player_id=player_id, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
-
-                    session.add(narrator_msg)
-
-                    await session.commit()
+                # Save narrator personal message (background)
+                task = asyncio.create_task(save_chat_message_background(player_id, "narrator", "narrator", narrator_reply, intent.intent.value))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
