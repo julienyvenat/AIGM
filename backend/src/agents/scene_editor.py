@@ -5,6 +5,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class SceneEditorResponse(BaseModel):
 
 client = AsyncOpenAI() if os.environ.get("OPENAI_API_KEY") else None
 
-if os.environ.get("GOOGLE_API_KEY"):
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+# Configuration Gemini
+gemini_client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY")) if os.environ.get("GOOGLE_API_KEY") else None
 
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
@@ -35,16 +36,18 @@ async def analyze_scene(text: str) -> SceneEditorResponse:
 
     try:
         if LLM_PROVIDER == "gemini":
-            model = genai.GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=system_prompt
+            if not gemini_client:
+                raise ValueError("GOOGLE_API_KEY is not set.")
+            
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+                response_schema=SceneEditorResponse,
             )
-            response = await model.generate_content_async(
-                text,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json",
-                    response_schema=SceneEditorResponse,
-                )
+            response = await gemini_client.aio.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=text,
+                config=config,
             )
             parsed_dict = json.loads(response.text)
             return SceneEditorResponse(**parsed_dict)
