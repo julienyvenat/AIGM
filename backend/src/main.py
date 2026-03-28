@@ -269,14 +269,21 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 # On ne fait rien, on continue la boucle
                 continue
 
-            elif intent.intent == IntentType.ROLEPLAY:
-                # Récupération de la mémoire RAG
+            elif intent.intent in (IntentType.ROLEPLAY, IntentType.ACTION):
+                # 1. Récupération de la mémoire RAG (Lore)
                 contexte_rag = await get_relevant_context(player_text, filter_type='lore')
-                # Appel de l'Agent Narrateur avec contexte
+
+                # 2. Générer le texte du Narrateur
                 async for session in get_session():
                     narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag)
+                    break # Une seule session suffit
 
-                # Diffusion du message à tous les joueurs
+                # 3. Sauvegarder ce texte en BDD (UNE SEULE FOIS, via tâche asynchrone non-bloquante)
+                task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
+                # 4. Diffuser le texte via WebSocket
                 await manager.broadcast(
                     {
                         "type": "narrator",
@@ -285,69 +292,16 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     }
                 )
 
-                # Save narrator broadcast message (player_id=None / "global")
-                async for session in get_session():
-                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
-                    session.add(narrator_msg)
-                    await session.commit()
-
-                # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
+                # 5. Appeler le scene_editor
                 scene_decision = await analyze_scene(narrator_reply)
-                if scene_decision.decision.value == "GENERATE":
+
+                # 6. SI ET SEULEMENT SI la décision est GENERATE, lancer la tâche asynchrone
+                if scene_decision.decision == ImageDecision.GENERATE or scene_decision.decision.value == "GENERATE":
                     task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
-
-                # Save narrator broadcast message (background)
-                task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
-                background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
-
-                # Lancement de la génération d'image en arrière-plan
-                task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
-                background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
-
-            elif intent.intent == IntentType.ACTION:
-                # Ouverture d'une session de base de données asynchrone
-                async for session in get_session():
-                    narrator_reply = await generate_narrator_response(session, player_id, player_text)
-
-                # Diffusion du message à tous les joueurs
-                await manager.broadcast(
-                    {
-                        "type": "narrator",
-                        "category": intent.intent.value,
-                        "message": narrator_reply
-                    }
-                )
-
-                # Save narrator broadcast message (player_id=None / "global")
-                async for session in get_session():
-                    narrator_msg = ChatMessage(player_id=None, sender="narrator", type="narrator", category=intent.intent.value, content=narrator_reply)
-                    session.add(narrator_msg)
-                    await session.commit()
-
-                # Lancement de la génération d'image en arrière-plan (conditionnée par le monteur de scène)
-                scene_decision = await analyze_scene(narrator_reply)
-                if scene_decision.decision.value == "GENERATE":
-                    task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
-                    background_tasks.add(task)
-                    task.add_done_callback(background_tasks.discard)
-                else:
-                    logger.info("Scene editor decision: IGNORE")
-
-                # Save narrator broadcast message (background)
-                task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
-                background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
-
-                # Lancement de la génération d'image en arrière-plan
-                task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager))
-                background_tasks.add(task)
-                task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
