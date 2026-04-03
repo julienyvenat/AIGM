@@ -35,3 +35,28 @@ class ChatMessage(SQLModel, table=True):
     category: Optional[str] = Field(default=None)
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class WorldNPCTable(SQLModel, table=True):
+    __tablename__ = "world_npc"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    nom: str
+    faction: Optional[str] = Field(default=None)
+    description: str
+    hp: Optional[int] = Field(default=None)
+    armor_class: Optional[int] = Field(default=None)
+
+class WorldLocationTable(SQLModel, table=True):
+    __tablename__ = "world_location"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    nom: str
+    description: str
+    # Storing lists as JSON strings in sqlite
+    points_interet: str = Field(default="[]")
+
+class WorldFactionTable(SQLModel, table=True):
+    __tablename__ = "world_faction"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    nom: str
+    description: str
+    # Storing lists as JSON strings in sqlite
+    relations_politiques: str = Field(default="[]")
