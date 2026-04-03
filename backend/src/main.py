@@ -285,14 +285,54 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                             # Run arbitration
                             arbitration_res = await arbitrate_action(char, player_text)
 
+                            # Deduct resource if consumed
+                            needs_update = False
+                            resource_msg = ""
+                            if arbitration_res.consumed_resource_type == "spell_slot" and arbitration_res.consumed_resource_name:
+                                try:
+                                    slots = json.loads(char.spell_slots)
+                                    slot_name = str(arbitration_res.consumed_resource_name)
+                                    if slot_name in slots and int(slots[slot_name]) > 0:
+                                        slots[slot_name] = int(slots[slot_name]) - 1
+                                        char.spell_slots = json.dumps(slots)
+                                        needs_update = True
+                                        resource_msg = f" (A consommé un emplacement de sort de niveau {slot_name})"
+                                except Exception as e:
+                                    logger.error(f"Error deducting spell slot: {e}")
+                            elif arbitration_res.consumed_resource_type == "class_resource" and arbitration_res.consumed_resource_name:
+                                try:
+                                    resources = json.loads(char.class_resources)
+                                    res_name = str(arbitration_res.consumed_resource_name)
+                                    if res_name in resources and int(resources[res_name]) > 0:
+                                        resources[res_name] = int(resources[res_name]) - 1
+                                        char.class_resources = json.dumps(resources)
+                                        needs_update = True
+                                        resource_msg = f" (A consommé {res_name})"
+                                except Exception as e:
+                                    logger.error(f"Error deducting class resource: {e}")
+
                             # Apply HP change
                             if arbitration_res.hp_change != 0:
                                 char.hp += arbitration_res.hp_change
                                 # Clamp HP
                                 char.hp = max(0, min(char.hp, char.max_hp))
+                                needs_update = True
+
+                            if needs_update:
                                 session.add(char)
                                 await session.commit()
                                 await session.refresh(char)
+
+                                # Parse fields back for frontend
+                                known_spells_parsed = []
+                                spell_slots_parsed = {}
+                                class_resources_parsed = {}
+                                try:
+                                    known_spells_parsed = json.loads(char.known_spells)
+                                    spell_slots_parsed = json.loads(char.spell_slots)
+                                    class_resources_parsed = json.loads(char.class_resources)
+                                except Exception:
+                                    pass
 
                                 # Broadcast STATS_UPDATE
                                 await manager.send_personal_message(
@@ -313,13 +353,16 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                                             "wisdom": char.wisdom,
                                             "charisma": char.charisma,
                                             "level": char.level,
-                                            "experience": char.experience
+                                            "experience": char.experience,
+                                            "known_spells": known_spells_parsed,
+                                            "spell_slots": spell_slots_parsed,
+                                            "class_resources": class_resources_parsed
                                         }
                                     },
                                     websocket
                                 )
 
-                            arbitration_context = f"[Résultat du Système (NE PAS MONTRER AU JOUEUR)] : Le joueur a effectué une action. Le système a lancé un D20. Résultat du dé: {arbitration_res.roll_value}, Modificateur: {arbitration_res.modifier}, Total: {arbitration_res.total}. Succès: {arbitration_res.success}. Changement HP du joueur: {arbitration_res.hp_change}."
+                            arbitration_context = f"[Résultat du Système (NE PAS MONTRER AU JOUEUR)] : Le joueur a effectué une action. Le système a lancé un D20. Résultat du dé: {arbitration_res.roll_value}, Modificateur: {arbitration_res.modifier}, Total: {arbitration_res.total}. Succès: {arbitration_res.success}. Changement HP du joueur: {arbitration_res.hp_change}.{resource_msg}"
                         break # Only need one session
                 # --- END ARBITRATION BLOCK ---
 
