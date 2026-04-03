@@ -9,6 +9,7 @@ load_dotenv()
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from world_builder.world_router import router as world_router
 
 from engine.database import init_db, get_session
 from engine.models import ChatMessage
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
     logger.info("Arrêt de l'application...")
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(world_router)
 import os
 from fastapi.staticfiles import StaticFiles
 os.makedirs("backend/images", exist_ok=True)
