@@ -1,0 +1,190 @@
+Starting FastAPI Server...
+INFO:     Will watch for changes in these directories: ['/app/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [255354] using WatchFiles
+INFO:     Started server process [255470]
+INFO:     Waiting for application startup.
+INFO:main:Initialisation de la base de données...
+2026-04-03 18:21:32,213 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:21:32,214 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("item")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("item")
+2026-04-03 18:21:32,214 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:21:32,215 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("character")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("character")
+2026-04-03 18:21:32,215 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:21:32,216 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("chatmessage")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("chatmessage")
+2026-04-03 18:21:32,216 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:21:32,217 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:     Application startup complete.
+INFO:     127.0.0.1:54600 - "WebSocket /ws/TestHero" [accepted]
+INFO:main:Nouvelle connexion WebSocket établie. Total: 1
+2026-04-03 18:21:54,139 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:21:54,151 INFO sqlalchemy.engine.Engine SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+INFO:sqlalchemy.engine.Engine:SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+2026-04-03 18:21:54,152 INFO sqlalchemy.engine.Engine [generated in 0.00037s] ('TestHero',)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00037s] ('TestHero',)
+INFO:     connection open
+2026-04-03 18:21:54,155 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:sqlalchemy.engine.Engine:ROLLBACK
+INFO:main:Connexion WebSocket fermée. Total: 0
+INFO:     connection closed
+2026-04-03 18:29:08,863 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:29:08,867 INFO sqlalchemy.engine.Engine SELECT character.id, character.name, character.is_pc, character.hp, character.max_hp, character.armor_class, character.speed, character.x, character.y, character.reference_portrait_url, character.strength, character.dexterity, character.constitution, character.intelligence, character.wisdom, character.charisma, character.level, character.experience
+FROM character
+WHERE character.name = ?
+INFO:sqlalchemy.engine.Engine:SELECT character.id, character.name, character.is_pc, character.hp, character.max_hp, character.armor_class, character.speed, character.x, character.y, character.reference_portrait_url, character.strength, character.dexterity, character.constitution, character.intelligence, character.wisdom, character.charisma, character.level, character.experience
+FROM character
+WHERE character.name = ?
+2026-04-03 18:29:08,867 INFO sqlalchemy.engine.Engine [generated in 0.00039s] ('TestHero',)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00039s] ('TestHero',)
+2026-04-03 18:29:08,874 INFO sqlalchemy.engine.Engine INSERT INTO character (id, name, is_pc, hp, max_hp, armor_class, speed, x, y, reference_portrait_url, strength, dexterity, constitution, intelligence, wisdom, charisma, level, experience) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INFO:sqlalchemy.engine.Engine:INSERT INTO character (id, name, is_pc, hp, max_hp, armor_class, speed, x, y, reference_portrait_url, strength, dexterity, constitution, intelligence, wisdom, charisma, level, experience) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+2026-04-03 18:29:08,874 INFO sqlalchemy.engine.Engine [generated in 0.00046s] ('90822edb088345fb92ebf71101a037eb', 'TestHero', 1, 20, 20, 10, 30, 0, 0, None, 10, 10, 10, 10, 10, 10, 1, 0)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00046s] ('90822edb088345fb92ebf71101a037eb', 'TestHero', 1, 20, 20, 10, 30, 0, 0, None, 10, 10, 10, 10, 10, 10, 1, 0)
+2026-04-03 18:29:08,875 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+2026-04-03 18:29:08,879 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:29:08,882 INFO sqlalchemy.engine.Engine SELECT character.id, character.name, character.is_pc, character.hp, character.max_hp, character.armor_class, character.speed, character.x, character.y, character.reference_portrait_url, character.strength, character.dexterity, character.constitution, character.intelligence, character.wisdom, character.charisma, character.level, character.experience
+FROM character
+WHERE character.id = ?
+INFO:sqlalchemy.engine.Engine:SELECT character.id, character.name, character.is_pc, character.hp, character.max_hp, character.armor_class, character.speed, character.x, character.y, character.reference_portrait_url, character.strength, character.dexterity, character.constitution, character.intelligence, character.wisdom, character.charisma, character.level, character.experience
+FROM character
+WHERE character.id = ?
+2026-04-03 18:29:08,882 INFO sqlalchemy.engine.Engine [generated in 0.00034s] ('90822edb088345fb92ebf71101a037eb',)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00034s] ('90822edb088345fb92ebf71101a037eb',)
+INFO:     127.0.0.1:42452 - "GET /characters/by-name/TestHero HTTP/1.1" 200 OK
+2026-04-03 18:29:08,885 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:sqlalchemy.engine.Engine:ROLLBACK
+INFO:     127.0.0.1:49442 - "WebSocket /ws/90822edb-0883-45fb-92eb-f71101a037eb" [accepted]
+INFO:main:Nouvelle connexion WebSocket établie. Total: 1
+2026-04-03 18:29:25,070 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:29:25,071 INFO sqlalchemy.engine.Engine SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+INFO:sqlalchemy.engine.Engine:SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+2026-04-03 18:29:25,071 INFO sqlalchemy.engine.Engine [cached since 450.9s ago] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:sqlalchemy.engine.Engine:[cached since 450.9s ago] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:     connection open
+2026-04-03 18:29:25,074 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:sqlalchemy.engine.Engine:ROLLBACK
+INFO:main:Connexion WebSocket fermée. Total: 0
+INFO:     connection closed
+INFO:     127.0.0.1:50892 - "WebSocket /ws/90822edb-0883-45fb-92eb-f71101a037eb" [accepted]
+INFO:main:Nouvelle connexion WebSocket établie. Total: 1
+2026-04-03 18:36:31,409 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:36:31,410 INFO sqlalchemy.engine.Engine SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+INFO:sqlalchemy.engine.Engine:SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+2026-04-03 18:36:31,411 INFO sqlalchemy.engine.Engine [cached since 877.3s ago] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:sqlalchemy.engine.Engine:[cached since 877.3s ago] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:     connection open
+2026-04-03 18:36:31,414 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:sqlalchemy.engine.Engine:ROLLBACK
+INFO:main:Connexion WebSocket fermée. Total: 0
+INFO:     connection closed
+WARNING:  WatchFiles detected changes in 'src/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:main:Arrêt de l'application...
+INFO:     Application shutdown complete.
+INFO:     Finished server process [255470]
+INFO:     Started server process [307453]
+INFO:     Waiting for application startup.
+INFO:main:Initialisation de la base de données...
+2026-04-03 18:43:39,964 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:43:39,964 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("item")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("item")
+2026-04-03 18:43:39,965 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:43:39,966 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("character")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("character")
+2026-04-03 18:43:39,966 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:43:39,969 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("chatmessage")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("chatmessage")
+2026-04-03 18:43:39,969 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:43:39,970 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:     Application startup complete.
+INFO:     127.0.0.1:54244 - "WebSocket /ws/90822edb-0883-45fb-92eb-f71101a037eb" [accepted]
+INFO:main:Nouvelle connexion WebSocket établie. Total: 1
+2026-04-03 18:43:49,734 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:43:49,747 INFO sqlalchemy.engine.Engine SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+INFO:sqlalchemy.engine.Engine:SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+2026-04-03 18:43:49,747 INFO sqlalchemy.engine.Engine [generated in 0.00038s] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00038s] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:     connection open
+2026-04-03 18:43:49,750 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:sqlalchemy.engine.Engine:ROLLBACK
+INFO:main:Connexion WebSocket fermée. Total: 0
+INFO:     connection closed
+WARNING:  WatchFiles detected changes in 'src/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:main:Arrêt de l'application...
+INFO:     Application shutdown complete.
+INFO:     Finished server process [307453]
+INFO:     Started server process [333809]
+INFO:     Waiting for application startup.
+INFO:main:Initialisation de la base de données...
+2026-04-03 18:51:23,199 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:51:23,199 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("item")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("item")
+2026-04-03 18:51:23,199 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:51:23,201 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("character")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("character")
+2026-04-03 18:51:23,202 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:51:23,203 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("chatmessage")
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("chatmessage")
+2026-04-03 18:51:23,203 INFO sqlalchemy.engine.Engine [raw sql] ()
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+2026-04-03 18:51:23,205 INFO sqlalchemy.engine.Engine COMMIT
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:     Application startup complete.
+INFO:     127.0.0.1:56792 - "WebSocket /ws/90822edb-0883-45fb-92eb-f71101a037eb" [accepted]
+INFO:main:Nouvelle connexion WebSocket établie. Total: 1
+2026-04-03 18:51:46,212 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+2026-04-03 18:51:46,225 INFO sqlalchemy.engine.Engine SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+INFO:sqlalchemy.engine.Engine:SELECT chatmessage.id, chatmessage.player_id, chatmessage.sender, chatmessage.type, chatmessage.category, chatmessage.content, chatmessage.timestamp
+FROM chatmessage
+WHERE chatmessage.player_id = ? OR chatmessage.player_id IS NULL ORDER BY chatmessage.timestamp
+2026-04-03 18:51:46,226 INFO sqlalchemy.engine.Engine [generated in 0.00042s] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00042s] ('90822edb-0883-45fb-92eb-f71101a037eb',)
+INFO:     connection open
+2026-04-03 18:51:46,228 INFO sqlalchemy.engine.Engine ROLLBACK
+INFO:sqlalchemy.engine.Engine:ROLLBACK
+INFO:main:Connexion WebSocket fermée. Total: 0
+INFO:     connection closed

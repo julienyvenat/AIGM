@@ -60,6 +60,21 @@ function App() {
       {/* Header / Connection Bar */}
       <header className="p-4 border-b border-gray-700 bg-gray-800 flex justify-between items-center shrink-0">
         <h1 className="text-xl font-bold text-emerald-400">RPG AI Game Master</h1>
+        {character && isConnected && (
+          <div className="ml-8 flex items-center gap-4 bg-gray-900/50 px-4 py-1.5 rounded-full border border-gray-700">
+            <span className="font-bold text-gray-200">{character.name}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-400">HP:</span>
+              <div className="w-32 h-3 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 transition-all duration-300"
+                  style={{ width: `${Math.max(0, Math.min(100, (character.hp / character.max_hp) * 100))}%` }}
+                />
+              </div>
+              <span className="text-sm font-bold text-red-400">{character.hp}/{character.max_hp}</span>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleConnect} className="flex gap-2 items-center">
           <div className="flex items-center gap-2">

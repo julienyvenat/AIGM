@@ -24,6 +24,14 @@ class Character(SQLModel, table=True):
     x: int = Field(default=0)
     y: int = Field(default=0)
     reference_portrait_url: Optional[str] = Field(default=None)
+    strength: int = Field(default=10)
+    dexterity: int = Field(default=10)
+    constitution: int = Field(default=10)
+    intelligence: int = Field(default=10)
+    wisdom: int = Field(default=10)
+    charisma: int = Field(default=10)
+    level: int = Field(default=1)
+    experience: int = Field(default=0)
 
     items: List[Item] = Relationship(back_populates="character")
 

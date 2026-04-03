@@ -129,7 +129,6 @@ manager = ConnectionManager()
 async def get_or_create_character_by_name(name: str):
     try:
         from engine.database import get_session
-        from sqlmodel import select
         async for session in get_session():
             statement = select(Character).where(Character.name == name)
             result = await session.execute(statement)
@@ -272,12 +271,64 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 continue
 
             elif intent.intent in (IntentType.ROLEPLAY, IntentType.ACTION):
+                # --- ARBITRATION BLOCK ---
+                arbitration_context = ""
+                if intent.intent == IntentType.ACTION:
+                    import uuid
+                    async for session in get_session():
+                        # Try to find the character for this player
+                        statement = select(Character).where(Character.id == uuid.UUID(player_id))
+                        result = await session.execute(statement)
+                        char = result.scalars().first()
+
+                        if char:
+                            # Run arbitration
+                            arbitration_res = await arbitrate_action(char, player_text)
+
+                            # Apply HP change
+                            if arbitration_res.hp_change != 0:
+                                char.hp += arbitration_res.hp_change
+                                # Clamp HP
+                                char.hp = max(0, min(char.hp, char.max_hp))
+                                session.add(char)
+                                await session.commit()
+                                await session.refresh(char)
+
+                                # Broadcast STATS_UPDATE
+                                await manager.send_personal_message(
+                                    {
+                                        "type": "stats_update",
+                                        "character": {
+                                            "id": str(char.id),
+                                            "name": char.name,
+                                            "hp": char.hp,
+                                            "max_hp": char.max_hp,
+                                            "armor_class": char.armor_class,
+                                            "speed": char.speed,
+                                            "reference_portrait_url": char.reference_portrait_url,
+                                            "strength": char.strength,
+                                            "dexterity": char.dexterity,
+                                            "constitution": char.constitution,
+                                            "intelligence": char.intelligence,
+                                            "wisdom": char.wisdom,
+                                            "charisma": char.charisma,
+                                            "level": char.level,
+                                            "experience": char.experience
+                                        }
+                                    },
+                                    websocket
+                                )
+
+                            arbitration_context = f"[Résultat du Système (NE PAS MONTRER AU JOUEUR)] : Le joueur a effectué une action. Le système a lancé un D20. Résultat du dé: {arbitration_res.roll_value}, Modificateur: {arbitration_res.modifier}, Total: {arbitration_res.total}. Succès: {arbitration_res.success}. Changement HP du joueur: {arbitration_res.hp_change}."
+                        break # Only need one session
+                # --- END ARBITRATION BLOCK ---
+
                 # 1. Récupération de la mémoire RAG (Lore)
                 contexte_rag = await get_relevant_context(player_text, filter_type='lore')
 
                 # 2. Générer le texte du Narrateur
                 async for session in get_session():
-                    narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag)
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag + '\n\n' + arbitration_context)
                     break # Une seule session suffit
 
                 # 3. Sauvegarder ce texte en BDD (UNE SEULE FOIS, via tâche asynchrone non-bloquante)
