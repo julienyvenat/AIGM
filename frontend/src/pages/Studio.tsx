@@ -46,7 +46,7 @@ export function Studio() {
     if (selectedUniverseId) {
       fetchUniverseEntities(selectedUniverseId);
     }
-  }, [selectedUniverseId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedUniverseId]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;

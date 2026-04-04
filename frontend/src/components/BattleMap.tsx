@@ -12,18 +12,24 @@ export interface Entity {
 
 interface BattleMapProps {
   entities: Entity[];
+  battlemapImageUrl?: string | null;
 }
 
-export const BattleMap: React.FC<BattleMapProps> = ({ entities }) => {
+export const BattleMap: React.FC<BattleMapProps> = ({ entities, battlemapImageUrl }) => {
   // Hardcoded 15x15 grid for now
   const gridSize = 15;
   const gridCells = Array.from({ length: gridSize * gridSize }, (_, i) => i);
 
   return (
     <div className="relative w-full max-w-3xl aspect-square flex items-center justify-center bg-stone-900 border-4 border-stone-800 rounded-lg overflow-hidden shadow-2xl">
+      {/* Background Image */}
+      {battlemapImageUrl && (
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${battlemapImageUrl})` }} />
+      )}
+
       {/* Background Grid */}
       <div
-        className="absolute inset-0 grid bg-stone-800"
+        className="absolute inset-0 grid"
         style={{
           gridTemplateColumns: `repeat(${gridSize}, 1fr)`,
           gridTemplateRows: `repeat(${gridSize}, 1fr)`,
@@ -77,11 +83,11 @@ export const BattleMap: React.FC<BattleMapProps> = ({ entities }) => {
       </div>
 
       {/* Out of Combat Overlay */}
-      {entities.length === 0 && (
+      {!battlemapImageUrl && (
         <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20 backdrop-blur-sm">
           <div className="text-center">
             <h3 className="text-2xl font-bold text-gray-200 tracking-wider">Exploration en cours...</h3>
-            <p className="text-gray-400 mt-2 text-sm italic">Aucun combat actif</p>
+            <p className="text-gray-400 mt-2 text-sm italic">Tapez /battle pour commencer un combat</p>
           </div>
         </div>
       )}

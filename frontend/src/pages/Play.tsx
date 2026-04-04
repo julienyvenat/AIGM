@@ -24,9 +24,9 @@ export interface Character {
   charisma: number;
   level: number;
   experience: number;
-  known_spells: any[];
-  spell_slots: Record<string, any>;
-  class_resources: Record<string, any>;
+  known_spells: Record<string, unknown>[];
+  spell_slots: Record<string, unknown>;
+  class_resources: Record<string, unknown>;
 }
 
 export function Play() {
@@ -46,7 +46,7 @@ export function Play() {
   }, []);
 
   // We pass universeId down to WebSocket hook so it connects properly
-  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage } = useGameWebSocket(activePlayerId, universeId || null, handleStatsUpdate);
+  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, universeId || null, handleStatsUpdate);
 
   useEffect(() => {
     if (!universeId || !characterName) {
@@ -135,7 +135,7 @@ export function Play() {
 
         {/* Right Column: Map/Content (2/3) */}
         <section className="w-2/3 p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
-          <BattleMap entities={entities} />
+          <BattleMap entities={entities} battlemapImageUrl={battlemapImageUrl} />
 
           {currentSceneImage && (
             <SceneViewer imageUrl={currentSceneImage} onClose={clearSceneImage} />
