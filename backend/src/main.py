@@ -367,7 +367,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 # --- END ARBITRATION BLOCK ---
 
                 # 1. Récupération de la mémoire RAG (Lore)
-                contexte_rag = await get_relevant_context(player_text, filter_type='lore')
+                contexte_rag = await get_relevant_context(player_text, universe_id=universe_id, filter_type='lore')
 
                 # 2. Générer le texte du Narrateur
                 async for session in get_session():

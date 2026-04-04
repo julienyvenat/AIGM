@@ -73,49 +73,23 @@ function App() {
     setActivePlayerId(updatedCharacter.id); // Now we connect to the WebSocket
   };
 
+import { Routes, Route, Link } from 'react-router-dom';
+import { Home } from './pages/Home';
+import { Studio } from './pages/Studio';
+import { Play } from './pages/Play';
+
+function App() {
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-gray-100 font-sans">
-      {/* Header / Connection Bar */}
+      {/* Global Header */}
       <header className="p-4 border-b border-gray-700 bg-gray-800 flex justify-between items-center shrink-0">
-        <h1 className="text-xl font-bold text-emerald-400">RPG AI Game Master</h1>
-        {character && isConnected && (
-          <div className="ml-8 flex items-center gap-4 bg-gray-900/50 px-4 py-1.5 rounded-full border border-gray-700">
-            <span className="font-bold text-gray-200">{character.name}</span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">HP:</span>
-              <div className="w-32 h-3 bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-red-500 transition-all duration-300"
-                  style={{ width: `${Math.max(0, Math.min(100, (character.hp / character.max_hp) * 100))}%` }}
-                />
-              </div>
-              <span className="text-sm font-bold text-red-400">{character.hp}/{character.max_hp}</span>
-            </div>
-          </div>
-        )}
-
-        <form onSubmit={handleConnect} className="flex gap-2 items-center">
-          <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'}`}></span>
-            <span className="text-sm font-medium text-gray-300">
-              {isConnected ? 'Connecté' : 'Déconnecté'}
-            </span>
-          </div>
-
-          <input
-            type="text"
-            placeholder="Entrez votre nom..."
-            value={playerIdInput}
-            onChange={(e) => setPlayerIdInput(e.target.value)}
-            className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm ml-4"
-          />
-          <button
-            type="submit"
-            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-medium rounded-md transition-colors text-sm"
-          >
-            Se connecter
-          </button>
-        </form>
+        <Link to="/" className="text-xl font-bold text-emerald-400 hover:text-emerald-300">
+          RPG AI Game Master
+        </Link>
+        <nav className="flex gap-4">
+          <Link to="/" className="text-gray-300 hover:text-white font-medium">Lobby</Link>
+          <Link to="/studio" className="text-gray-300 hover:text-white font-medium">Studio Pro</Link>
+        </nav>
       </header>
 
       {/* Main Layout */}
@@ -157,6 +131,13 @@ function App() {
             onComplete={handleCharacterManagerComplete}
           />
         )}
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-hidden">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/studio" element={<Studio />} />
+          <Route path="/play/:universeId" element={<Play />} />
+        </Routes>
       </main>
     </div>
   );
