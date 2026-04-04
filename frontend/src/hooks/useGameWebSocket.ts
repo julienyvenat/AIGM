@@ -14,7 +14,7 @@ export interface GameMessage {
   timestamp?: string;
 }
 
-export function useGameWebSocket(playerId: string | null) {
+export function useGameWebSocket(playerId: string | null, universeId?: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -36,7 +36,8 @@ export function useGameWebSocket(playerId: string | null) {
 
     const connect = () => {
       const baseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
-      const wsUrl = `${baseUrl}/${playerId}`;
+      const uId = universeId || 'default';
+      const wsUrl = `${baseUrl}/${uId}/${playerId}`;
 
       console.log(`Attempting to connect to ${wsUrl}...`);
       const ws = new WebSocket(wsUrl);
@@ -131,7 +132,7 @@ export function useGameWebSocket(playerId: string | null) {
         wsRef.current = null;
       }
     };
-  }, [playerId]);
+  }, [playerId, universeId]);
 
   const sendMessage = useCallback((text: string) => {
     if (!text.trim()) return;
