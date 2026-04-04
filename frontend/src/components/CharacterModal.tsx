@@ -1,4 +1,4 @@
-import type { Character } from '../App';
+import type { Character } from '../pages/Play';
 
 interface CharacterModalProps {
   character: Character;

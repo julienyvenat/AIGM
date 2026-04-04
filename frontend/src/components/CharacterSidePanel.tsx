@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Character } from '../App';
+import type { Character } from '../pages/Play';
 
 interface CharacterSidePanelProps {
   character: Character;
@@ -98,7 +98,7 @@ export function CharacterSidePanel({ character, onOpenModal }: CharacterSidePane
               <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-red-500 transition-all duration-300"
-                  style={{ width: `${Math.max(0, Math.min(100, (character.hp / character.max_hp) * 100))}%` }}
+                  style={{ width: `${Math.max(0, Math.min(100, ((character.hp || 0) / (character.max_hp || 1)) * 100))}%` }}
                 />
               </div>
             </div>

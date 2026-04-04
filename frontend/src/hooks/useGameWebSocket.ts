@@ -14,8 +14,7 @@ export interface GameMessage {
   timestamp?: string;
 }
 
-export function useGameWebSocket(playerId: string | null, onStatsUpdate?: (character: any) => void) {
-export function useGameWebSocket(playerId: string | null, universeId?: string) {
+export function useGameWebSocket(playerId: string | null, universeId: string | null, onStatsUpdate?: (character: any) => void) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -28,7 +27,7 @@ export function useGameWebSocket(playerId: string | null, universeId?: string) {
         wsRef.current.close();
         wsRef.current = null;
       }
-      setTimeout(() => setIsConnected(false), 0); // We'll fix this without using setTimeout if possible, but let's just make it a clean state reset later or ignore it for now using eslint-disable
+      setTimeout(() => setIsConnected(false), 0);
       return;
     }
 
@@ -55,7 +54,6 @@ export function useGameWebSocket(playerId: string | null, universeId?: string) {
         try {
           const data = JSON.parse(event.data);
 
-
           if (data.type === 'history' && Array.isArray(data.messages)) {
             setMessages(data.messages);
             return;
@@ -65,7 +63,6 @@ export function useGameWebSocket(playerId: string | null, universeId?: string) {
             setEntities(data.entities);
             return;
           }
-
 
           if (data.type === 'stats_update' && data.character) {
             if (onStatsUpdate) {
@@ -140,7 +137,7 @@ export function useGameWebSocket(playerId: string | null, universeId?: string) {
         wsRef.current = null;
       }
     };
-  }, [playerId, universeId]);
+  }, [playerId, universeId, onStatsUpdate]);
 
   const sendMessage = useCallback((text: string) => {
     if (!text.trim()) return;
@@ -161,7 +158,6 @@ export function useGameWebSocket(playerId: string | null, universeId?: string) {
       wsRef.current.send(JSON.stringify(payload));
     } else {
        console.error("Cannot send message, WebSocket is not open.");
-       // Optional: could add an error message to the UI here if needed
     }
   }, []);
 
