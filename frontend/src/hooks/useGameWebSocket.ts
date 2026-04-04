@@ -14,6 +14,7 @@ export interface GameMessage {
   timestamp?: string;
 }
 
+export function useGameWebSocket(playerId: string | null, onStatsUpdate?: (character: any) => void) {
 export function useGameWebSocket(playerId: string | null, universeId?: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
@@ -65,6 +66,13 @@ export function useGameWebSocket(playerId: string | null, universeId?: string) {
             return;
           }
 
+
+          if (data.type === 'stats_update' && data.character) {
+            if (onStatsUpdate) {
+              onStatsUpdate(data.character);
+            }
+            return;
+          }
 
           if (data.type === 'scene_image' && data.url) {
             setCurrentSceneImage(data.url);
