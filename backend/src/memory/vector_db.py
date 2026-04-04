@@ -78,6 +78,11 @@ def _add_to_memory_sync(text: str, memory_type: str, metadata: dict = None):
     if metadata:
         meta.update(metadata)
 
+    # Validation du universe_id dans les métadonnées (crucial pour le multi-univers)
+    if "universe_id" not in meta:
+        import logging
+        logging.warning("Ajout en mémoire sans 'universe_id' dans les métadonnées !")
+
     c = _get_or_init_collection()
     c.add(
         documents=[text],
@@ -93,12 +98,18 @@ async def add_to_memory(text: str, memory_type: str, metadata: dict = None):
     return await asyncio.to_thread(_add_to_memory_sync, text, memory_type, metadata)
 
 
-def _get_relevant_context_sync(query: str, limit: int = 3, filter_type: str = None) -> str:
-    """Fonction synchrone pour récupérer et formater le contexte de ChromaDB"""
+def _get_relevant_context_sync(query: str, universe_id: str, limit: int = 3, filter_type: str = None) -> str:
+    """Fonction synchrone pour récupérer et formater le contexte de ChromaDB, filtré par universe_id"""
 
-    where_clause = None
+    where_clause = {"universe_id": universe_id}
     if filter_type:
-        where_clause = {"type": filter_type}
+        # ChromaDB supporte des requêtes plus complexes avec $and
+        where_clause = {
+            "$and": [
+                {"universe_id": universe_id},
+                {"type": filter_type}
+            ]
+        }
 
     c = _get_or_init_collection()
     results = c.query(
@@ -125,9 +136,9 @@ def _get_relevant_context_sync(query: str, limit: int = 3, filter_type: str = No
     return "\n\n".join(formatted_results)
 
 
-async def get_relevant_context(query: str, limit: int = 3, filter_type: str = None) -> str:
+async def get_relevant_context(query: str, universe_id: str, limit: int = 3, filter_type: str = None) -> str:
     """
     Récupère le contexte sémantiquement proche de la requête depuis ChromaDB de manière asynchrone,
-    formaté pour l'Agent Narrateur.
+    formaté pour l'Agent Narrateur, STRICTEMENT filtré par universe_id.
     """
-    return await asyncio.to_thread(_get_relevant_context_sync, query, limit, filter_type)
+    return await asyncio.to_thread(_get_relevant_context_sync, query, str(universe_id), limit, filter_type)

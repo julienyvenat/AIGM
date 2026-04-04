@@ -1,64 +1,141 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from typing import List, Optional
-import os
-from openai import AsyncOpenAI
+from typing import List
 from pydantic import BaseModel
+import uuid
 
-from engine.database import get_session
-from engine.models import WorldNPCTable, WorldFactionTable
-from memory.vector_db import get_relevant_context
+from src.engine.database import get_session
+from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character
+from src.agents.universe_architect import generate_universe_from_prompt
+from src.memory.vector_db import add_to_memory
 
-router = APIRouter(prefix="/world", tags=["world"])
+router = APIRouter()
 
-class ScenarioResponse(BaseModel):
-    scenario: str
+class UniverseGenerateRequest(BaseModel):
+    prompt: str
 
-@router.get("/generate-scenario", response_model=ScenarioResponse)
-async def generate_scenario(session = Depends(get_session)):
-    try:
-        # 1. Requête SQL pour lister 2-3 PNJ intéressants et 1-2 Factions
-        npc_statement = select(WorldNPCTable).limit(3)
-        npc_results = await session.execute(npc_statement)
-        npcs = npc_results.scalars().all()
+@router.post("/world/generate-from-prompt")
+async def generate_universe(req: UniverseGenerateRequest, db: AsyncSession = Depends(get_session)):
+    # Create the universe and its entities
+    universe, world_knowledge = await generate_universe_from_prompt(req.prompt, db)
 
-        faction_statement = select(WorldFactionTable).limit(2)
-        faction_results = await session.execute(faction_statement)
-        factions = faction_results.scalars().all()
+    # Save the global lore to ChromaDB with universe_id metadata
+    await add_to_memory(
+        text=world_knowledge.histoire_globale,
+        memory_type="lore",
+        metadata={"universe_id": str(universe.id), "entity_type": "global_history"}
+    )
 
-        npc_context = "\n".join([f"PNJ: {npc.nom} - {npc.description}" for npc in npcs])
-        faction_context = "\n".join([f"Faction: {f.nom} - {f.description}" for f in factions])
-
-        # 2. Requête RAG pour avoir le ton du monde
-        rag_query = "Conflits majeurs, mystères non résolus, guerres de factions et ambiance générale du monde"
-        rag_context = await get_relevant_context(rag_query, limit=3, filter_type='lore')
-
-        # 3. Générer l'intrigue
-        prompt = f"""Tu es un Maître du Jeu expert. Génère une intrigue de scénario captivante basée sur ces éléments du monde:
-
-        {rag_context}
-
-        Implique ces PNJ :
-        {npc_context}
-
-        Et ces Factions :
-        {faction_context}
-
-        Le scénario doit comporter une accroche, un développement principal, et une fin ouverte.
-        """
-
-        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "dummy_key"))
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Tu es un Master du Jeu créatif."},
-                {"role": "user", "content": prompt}
-            ]
+    # Save NPCs to ChromaDB
+    for npc in world_knowledge.npc:
+        await add_to_memory(
+            text=f"{npc.nom} ({npc.faction or 'Sans faction'}): {npc.description}",
+            memory_type="lore",
+            metadata={"universe_id": str(universe.id), "entity_type": "NPC", "name": npc.nom}
         )
 
-        return ScenarioResponse(scenario=response.choices[0].message.content)
+    # Save Locations to ChromaDB
+    for loc in world_knowledge.location:
+        await add_to_memory(
+            text=f"{loc.nom}: {loc.description}. Points d'intérêt: {', '.join(loc.points_interet)}",
+            memory_type="lore",
+            metadata={"universe_id": str(universe.id), "entity_type": "Location", "name": loc.nom}
+        )
 
-    except Exception as e:
-        import logging
-        logging.error(f"Erreur lors de la génération du scénario : {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Save Factions to ChromaDB
+    for fact in world_knowledge.faction:
+        await add_to_memory(
+            text=f"{fact.nom}: {fact.description}. Relations: {', '.join(fact.relations_politiques)}",
+            memory_type="lore",
+            metadata={"universe_id": str(universe.id), "entity_type": "Faction", "name": fact.nom}
+        )
+
+    return {"status": "success", "universe": universe}
+
+@router.get("/universes", response_model=List[Universe])
+async def get_universes(db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(Universe))
+    return result.scalars().all()
+
+@router.get("/universes/{universe_id}", response_model=Universe)
+async def get_universe(universe_id: uuid.UUID, db: AsyncSession = Depends(get_session)):
+    universe = await db.get(Universe, universe_id)
+    if not universe:
+        raise HTTPException(status_code=404, detail="Universe not found")
+    return universe
+
+# CRUD Endpoints for entities within a universe
+@router.get("/universes/{universe_id}/npcs", response_model=List[WorldNPCTable])
+async def get_npcs(universe_id: uuid.UUID, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(WorldNPCTable).where(WorldNPCTable.universe_id == universe_id))
+    return result.scalars().all()
+
+@router.get("/universes/{universe_id}/locations", response_model=List[WorldLocationTable])
+async def get_locations(universe_id: uuid.UUID, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(WorldLocationTable).where(WorldLocationTable.universe_id == universe_id))
+    return result.scalars().all()
+
+@router.get("/universes/{universe_id}/factions", response_model=List[WorldFactionTable])
+async def get_factions(universe_id: uuid.UUID, db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(WorldFactionTable).where(WorldFactionTable.universe_id == universe_id))
+    return result.scalars().all()
+
+# Updating an NPC
+class NPCPatch(BaseModel):
+    nom: str
+    faction: str | None
+    description: str
+
+@router.put("/npcs/{npc_id}")
+async def update_npc(npc_id: uuid.UUID, req: NPCPatch, db: AsyncSession = Depends(get_session)):
+    npc = await db.get(WorldNPCTable, npc_id)
+    if not npc:
+        raise HTTPException(status_code=404, detail="NPC not found")
+    npc.nom = req.nom
+    npc.faction = req.faction
+    npc.description = req.description
+    await db.commit()
+    return npc
+
+# Updating a Faction
+class FactionPatch(BaseModel):
+    nom: str
+    description: str
+
+@router.put("/factions/{faction_id}")
+async def update_faction(faction_id: uuid.UUID, req: FactionPatch, db: AsyncSession = Depends(get_session)):
+    faction = await db.get(WorldFactionTable, faction_id)
+    if not faction:
+        raise HTTPException(status_code=404, detail="Faction not found")
+    faction.nom = req.nom
+    faction.description = req.description
+    await db.commit()
+    return faction
+
+# Fetching characters by Universe AND Name
+@router.get("/universes/{universe_id}/characters/by-name/{name}", response_model=Character)
+async def get_or_create_character_by_universe(universe_id: uuid.UUID, name: str, db: AsyncSession = Depends(get_session)):
+    universe = await db.get(Universe, universe_id)
+    if not universe:
+        raise HTTPException(status_code=404, detail="Universe not found")
+
+    result = await db.execute(select(Character).where(Character.name == name, Character.universe_id == universe_id))
+    char = result.scalars().first()
+
+    if not char:
+        # Create new character if they don't exist in this universe
+        char = Character(
+            name=name,
+            universe_id=universe_id,
+            is_pc=True,
+            hp=10,
+            max_hp=10,
+            armor_class=10,
+            speed=30
+        )
+        db.add(char)
+        await db.commit()
+        await db.refresh(char)
+
+    return char
