@@ -4,8 +4,10 @@ import { ChatPanel } from './components/ChatPanel';
 import { BattleMap } from './components/BattleMap';
 import { SceneViewer } from './components/SceneViewer';
 import { CharacterManager } from './components/CharacterManager';
+import { CharacterSidePanel } from './components/CharacterSidePanel';
+import { CharacterModal } from './components/CharacterModal';
 
-interface Character {
+export interface Character {
   id: string;
   name: string;
   hp: number;
@@ -13,6 +15,17 @@ interface Character {
   armor_class: number;
   speed: number;
   reference_portrait_url: string | null;
+  strength: number;
+  dexterity: number;
+  constitution: number;
+  intelligence: number;
+  wisdom: number;
+  charisma: number;
+  level: number;
+  experience: number;
+  known_spells: any[];
+  spell_slots: Record<string, any>;
+  class_resources: Record<string, any>;
 }
 
 function App() {
@@ -20,8 +33,13 @@ function App() {
   const [character, setCharacter] = useState<Character | null>(null);
   const [showCharacterManager, setShowCharacterManager] = useState(false);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
+  const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
 
-  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage } = useGameWebSocket(activePlayerId);
+  const handleStatsUpdate = (updatedCharacter: Partial<Character>) => {
+    setCharacter(prev => prev ? { ...prev, ...updatedCharacter } as Character : updatedCharacter as Character);
+  };
+
+  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage } = useGameWebSocket(activePlayerId, handleStatsUpdate);
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +119,7 @@ function App() {
       </header>
 
       {/* Main Layout */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex overflow-hidden relative">
         {/* Left Column: Chat (1/3) */}
         <section className="w-1/3 border-r border-gray-700 bg-gray-800/50 relative">
            {!isConnected ? (
@@ -124,7 +142,15 @@ function App() {
           )}
         </section>
 
+        {character && isConnected && (
+           <CharacterSidePanel character={character} onOpenModal={() => setIsCharacterModalOpen(true)} />
+        )}
+
         {/* Modals */}
+        {isCharacterModalOpen && character && (
+           <CharacterModal character={character} onClose={() => setIsCharacterModalOpen(false)} />
+        )}
+
         {showCharacterManager && character && (
           <CharacterManager
             character={character}

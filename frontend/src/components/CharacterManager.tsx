@@ -1,14 +1,6 @@
 import { useState } from 'react';
 
-interface Character {
-  id: string;
-  name: string;
-  hp: number;
-  max_hp: number;
-  armor_class: number;
-  speed: number;
-  reference_portrait_url: string | null;
-}
+import type { Character } from '../App';
 
 interface CharacterManagerProps {
   character: Character;
