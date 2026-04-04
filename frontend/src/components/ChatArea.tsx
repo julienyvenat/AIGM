@@ -4,7 +4,7 @@ import { useGameWebSocket, type GameMessage } from '../hooks/useGameWebSocket';
 export const ChatArea: React.FC = () => {
   // We'll pass a dummy 'player1' for this existing component if it's used somewhere.
   // In reality, App.tsx is now the main layout, but we'll fix this to compile.
-  const { messages, isConnected, sendMessage } = useGameWebSocket('player1');
+  const { messages, isConnected, sendMessage } = useGameWebSocket('player1', null);
   const [inputValue, setInputValue] = useState('');
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
