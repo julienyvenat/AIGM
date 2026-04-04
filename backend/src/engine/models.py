@@ -33,6 +33,10 @@ class Character(SQLModel, table=True):
     level: int = Field(default=1)
     experience: int = Field(default=0)
 
+    known_spells: str = Field(default="[]")
+    spell_slots: str = Field(default="{}")
+    class_resources: str = Field(default="{}")
+
     items: List[Item] = Relationship(back_populates="character")
 
 class ChatMessage(SQLModel, table=True):

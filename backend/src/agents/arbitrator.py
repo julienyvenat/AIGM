@@ -14,6 +14,8 @@ class ArbitratorLLMOutput(BaseModel):
     action_type: str = Field(description="Type of action (attack, spell, dodge, skill_check, etc.)")
     stat_used: str = Field(description="The stat used for this action: 'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', or 'charisma'.")
     difficulty_class: int = Field(description="The estimated Difficulty Class (DC) or Armor Class (AC) to beat, from 5 to 20.")
+    consumed_resource_type: Optional[str] = Field(description="'spell_slot', 'class_resource', or null", default=None)
+    consumed_resource_name: Optional[str] = Field(description="e.g. '3' for spell level 3, or 'ki_point'. null if none", default=None)
 
 class ArbitratorResult(BaseModel):
     has_roll: bool
@@ -22,6 +24,8 @@ class ArbitratorResult(BaseModel):
     total: int
     success: bool
     hp_change: int
+    consumed_resource_type: Optional[str] = None
+    consumed_resource_name: Optional[str] = None
 
 # Configuration OpenAI
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "")) if os.environ.get("OPENAI_API_KEY") else None
@@ -37,7 +41,8 @@ async def arbitrate_action(character: Character, intent_text: str) -> Arbitrator
     """
     Use an LLM to determine the stat and difficulty, then securely roll the dice in Python.
     """
-    system_prompt = f"""Tu es l'Arbitre (Dungeon Master) d'un jeu de rôle.
+    system_prompt = f"""Tu es un arbitre strict de D&D 5e. Utilise tes connaissances internes du SRD officiel pour connaître les effets, les dégâts, les jets de sauvegarde et les portées des sorts et capacités. Tu ne peux valider l'action d'un joueur que s'il possède le sort dans sa liste et s'il lui reste des emplacements de sorts appropriés.
+
 Le joueur tente l'action suivante : "{intent_text}"
 Les stats du personnage sont :
 Force: {character.strength}
@@ -47,10 +52,17 @@ Intelligence: {character.intelligence}
 Sagesse: {character.wisdom}
 Charisme: {character.charisma}
 
+Inventaire magique et ressources :
+Sorts connus: {character.known_spells}
+Emplacements de sorts (Niveau: Quantité): {character.spell_slots}
+Ressources de classe: {character.class_resources}
+
 Analyse l'action et renvoie un objet JSON avec :
 - action_type (string) : type d'action (attack, spell, etc.)
 - stat_used (string) : l'une des 6 caractéristiques (strength, dexterity, constitution, intelligence, wisdom, charisma).
 - difficulty_class (int) : une estimation de la difficulté (ex: 10 pour moyen, 15 pour difficile).
+- consumed_resource_type (string|null) : "spell_slot", "class_resource", ou null si rien n'est consommé.
+- consumed_resource_name (string|null) : le niveau de l'emplacement (ex: "3") ou le nom de la ressource (ex: "ki_point").
 """
 
     llm_output = None
@@ -128,5 +140,7 @@ Analyse l'action et renvoie un objet JSON avec :
         modifier=modifier,
         total=total,
         success=success,
-        hp_change=hp_change
+        hp_change=hp_change,
+        consumed_resource_type=llm_output.consumed_resource_type,
+        consumed_resource_name=llm_output.consumed_resource_name
     )
