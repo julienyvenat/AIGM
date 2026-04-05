@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Entity } from '../components/BattleMap';
 
 export type SenderType = 'user' | 'server';
-export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image';
+export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image' | 'battlemap_update';
 export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE';
 
 export interface GameMessage {
@@ -14,11 +14,12 @@ export interface GameMessage {
   timestamp?: string;
 }
 
-export function useGameWebSocket(playerId: string | null, universeId: string | null, onStatsUpdate?: (character: any) => void) {
+export function useGameWebSocket(playerId: string | null, universeId: string | null, onStatsUpdate?: (character: Record<string, unknown>) => void) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [currentSceneImage, setCurrentSceneImage] = useState<string | null>(null);
+  const [battlemapImageUrl, setBattlemapImageUrl] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -83,6 +84,11 @@ export function useGameWebSocket(playerId: string | null, universeId: string | n
               message: "Le MJ a partagé une vision...",
             };
             setMessages((prev) => [...prev, systemMessage]);
+            return;
+          }
+
+          if (data.type === 'battlemap_update') {
+            setBattlemapImageUrl(data.url);
             return;
           }
 
@@ -165,5 +171,5 @@ export function useGameWebSocket(playerId: string | null, universeId: string | n
     setCurrentSceneImage(null);
   }, []);
 
-  return { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage };
+  return { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage, battlemapImageUrl };
 }

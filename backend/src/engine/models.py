@@ -45,6 +45,9 @@ class Character(SQLModel, table=True):
     level: int = Field(default=1)
     experience: int = Field(default=0)
 
+    game_mode: str = Field(default="NARRATIVE")
+    battlemap_image_url: Optional[str] = Field(default=None)
+
     known_spells: str = Field(default="[]")
     spell_slots: str = Field(default="{}")
     class_resources: str = Field(default="{}")
@@ -70,6 +73,9 @@ class WorldNPCTable(SQLModel, table=True):
     description: str
     hp: Optional[int] = Field(default=None)
     armor_class: Optional[int] = Field(default=None)
+    x: int = Field(default=0)
+    y: int = Field(default=0)
+    is_in_combat: bool = Field(default=False)
 
     universe: Optional[Universe] = Relationship(back_populates="npcs")
 

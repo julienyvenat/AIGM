@@ -2,3 +2,5 @@ __pycache__/
 backend/chroma_data/
 .env
 backend/venv
+.venv/
+testenv/

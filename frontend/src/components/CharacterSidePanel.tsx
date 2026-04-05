@@ -21,8 +21,9 @@ export function CharacterSidePanel({ character, onOpenModal }: CharacterSidePane
         <div className="flex flex-col gap-1">
           {Object.entries(character.spell_slots).map(([level, data]) => {
             const l = level.replace('level_', '');
-            const total = data.max || 0;
-            const used = data.used || 0;
+            const typedData = data as Record<string, number>;
+            const total = typedData.max || 0;
+            const used = typedData.used || 0;
             const available = Math.max(0, total - used);
 
             if (total === 0) return null;

@@ -124,9 +124,9 @@ export function CharacterModal({ character, onClose }: CharacterModalProps) {
                   </div>
                 ) : (
                   <ul className="space-y-3">
-                    {character.known_spells.map((spell: any, idx: number) => {
-                       const spellName = typeof spell === 'string' ? spell : spell.name;
-                       const spellDesc = typeof spell === 'string' ? '' : spell.description;
+                    {character.known_spells.map((spell: Record<string, unknown> | string, idx: number) => {
+                       const spellName = typeof spell === 'string' ? spell : (spell as Record<string, string>).name;
+                       const spellDesc = typeof spell === 'string' ? '' : (spell as Record<string, string>).description;
                        return (
                         <li key={idx} className="bg-gray-800/50 p-3 rounded border border-gray-700/50 hover:border-gray-600 transition-colors">
                           <h4 className="font-bold text-indigo-400">{spellName}</h4>

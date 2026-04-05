@@ -54,6 +54,19 @@ async def _generate_imagen_image(prompt: str) -> str | None:
         logger.error(f"Erreur de génération d'image (Imagen): {e}")
         return None
 
+
+def generate_battlemap_prompt(description: str) -> str:
+    """
+    Génère un prompt strict pour créer une battlemap tactique (top-down, pas de grille)
+    à partir d'une description narrative.
+    """
+    return (
+        f"Top-down view (vue de dessus), orthographic projection, detailed battlemap for TTRPG, "
+        f"clean environment, no grid marks. "
+        f"Environment description: {description}. "
+        f"Make sure it looks like a flat map viewed directly from above, suitable for placing tokens."
+    )
+
 async def generate_scene_image(prompt: str) -> str | None:
     """
     Appelle l'API OpenAI (DALL-E 3) ou Google (Imagen) pour générer une image à partir d'un prompt.
