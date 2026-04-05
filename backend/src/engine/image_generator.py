@@ -1,3 +1,4 @@
+import aiofiles
 import os
 import logging
 from openai import AsyncOpenAI
@@ -20,8 +21,11 @@ async def _generate_imagen_image(prompt: str) -> str | None:
         if not gemini_client:
             raise ValueError("GOOGLE_API_KEY is not set.")
 
+
         # the google-genai library supports imagen using the models.generate_images method
-        result = gemini_client.models.generate_images(
+        # wrapped in asyncio.to_thread to avoid blocking the event loop
+        result = await asyncio.to_thread(
+            gemini_client.models.generate_images,
             model='imagen-3.0-generate-002',
             prompt=prompt,
             config=types.GenerateImagesConfig(
@@ -39,11 +43,11 @@ async def _generate_imagen_image(prompt: str) -> str | None:
         filename = f"{uuid.uuid4().hex}.png"
 
         # Ensure directory exists (Assuming frontend can serve this or we expose a route)
-        os.makedirs("backend/images", exist_ok=True)
+        await asyncio.to_thread(os.makedirs, "backend/images", exist_ok=True)
         filepath = os.path.join("backend/images", filename)
 
-        with open(filepath, "wb") as f:
-            f.write(image_data)
+        async with aiofiles.open(filepath, "wb") as f:
+            await f.write(image_data)
 
         # Returning a relative URL assuming a static route could be setup,
         # but for now we just return the local path or a placeholder if static route isn't configured
@@ -111,11 +115,11 @@ async def download_image_locally(url: str, filename_prefix: str = "portrait") ->
                 ext = "jpg"
 
             filename = f"{filename_prefix}_{uuid.uuid4().hex}.{ext}"
-            os.makedirs("backend/images", exist_ok=True)
+                await asyncio.to_thread(os.makedirs, "backend/images", exist_ok=True)
             filepath = os.path.join("backend/images", filename)
 
-            with open(filepath, "wb") as f:
-                f.write(response.content)
+            async with aiofiles.open(filepath, "wb") as f:
+                await f.write(response.content)
 
             logger.info(f"Image téléchargée avec succès: {filepath}")
             return f"/images/{filename}"
