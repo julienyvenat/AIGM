@@ -74,70 +74,78 @@ def merge_world_knowledges(knowledges: List[WorldKnowledge]) -> WorldKnowledge:
 
     return merged
 
-# Implémentation du stockage hybride
+# Implémentation du stockage hybride optimisé
 async def store_world_knowledge(knowledge: WorldKnowledge):
     from engine.database import get_session
     from engine.models import WorldNPCTable, WorldLocationTable, WorldFactionTable
-    from memory.vector_db import add_to_memory
+    from memory.vector_db import add_batch_to_memory
 
-    # Insertion SQL
-    async for session in get_session():
-        for npc in knowledge.npc:
-            db_npc = WorldNPCTable(
-                nom=npc.nom,
-                faction=npc.faction,
-                description=npc.description,
-                hp=npc.hp,
-                armor_class=npc.armor_class
-            )
-            session.add(db_npc)
-            # Vectorisation description NPC
-            await add_to_memory(
-                text=f"{npc.nom} : {npc.description}",
-                memory_type="lore",
-                metadata={"entity_type": "NPC", "name": npc.nom}
-            )
+    sql_instances = []
 
-        for loc in knowledge.location:
-            db_loc = WorldLocationTable(
-                nom=loc.nom,
-                description=loc.description,
-                points_interet=json.dumps(loc.points_interet)
-            )
-            session.add(db_loc)
-            # Vectorisation description Location
-            await add_to_memory(
-                text=f"{loc.nom} : {loc.description}",
-                memory_type="lore",
-                metadata={"entity_type": "Location", "name": loc.nom}
-            )
+    batch_texts = []
+    batch_memory_types = []
+    batch_metadatas = []
 
-        for fac in knowledge.faction:
-            db_fac = WorldFactionTable(
-                nom=fac.nom,
-                description=fac.description,
-                relations_politiques=json.dumps(fac.relations_politiques)
-            )
-            session.add(db_fac)
-            # Vectorisation description Faction
-            await add_to_memory(
-                text=f"{fac.nom} : {fac.description}",
-                memory_type="lore",
-                metadata={"entity_type": "Faction", "name": fac.nom}
-            )
+    # Prepare NPCs
+    for npc in knowledge.npc:
+        db_npc = WorldNPCTable(
+            nom=npc.nom,
+            faction=npc.faction,
+            description=npc.description,
+            hp=npc.hp,
+            armor_class=npc.armor_class
+        )
+        sql_instances.append(db_npc)
 
-        await session.commit()
-        break # Only one session needed
+        batch_texts.append(f"{npc.nom} : {npc.description}")
+        batch_memory_types.append("lore")
+        batch_metadatas.append({"entity_type": "NPC", "name": npc.nom})
 
-    # Vectorisation histoire globale
+    # Prepare Locations
+    for loc in knowledge.location:
+        db_loc = WorldLocationTable(
+            nom=loc.nom,
+            description=loc.description,
+            points_interet=json.dumps(loc.points_interet)
+        )
+        sql_instances.append(db_loc)
+
+        batch_texts.append(f"{loc.nom} : {loc.description}")
+        batch_memory_types.append("lore")
+        batch_metadatas.append({"entity_type": "Location", "name": loc.nom})
+
+    # Prepare Factions
+    for fac in knowledge.faction:
+        db_fac = WorldFactionTable(
+            nom=fac.nom,
+            description=fac.description,
+            relations_politiques=json.dumps(fac.relations_politiques)
+        )
+        sql_instances.append(db_fac)
+
+        batch_texts.append(f"{fac.nom} : {fac.description}")
+        batch_memory_types.append("lore")
+        batch_metadatas.append({"entity_type": "Faction", "name": fac.nom})
+
+    # Prepare Global History chunks
     if knowledge.histoire_globale:
-        # Si c'est trop long, on peut le chunker ici aussi, mais add_to_memory
-        # utilise les embedding models qui ont souvent une limite (ex: 8191 tokens pour text-embedding-3).
-        # On va le chunker par précaution.
         histoire_chunks = chunk_text(knowledge.histoire_globale, max_tokens=2000)
         for i, chunk in enumerate(histoire_chunks):
-             await add_to_memory(
-                text=chunk,
-                memory_type="lore",
-                metadata={"entity_type": "GlobalHistory", "part": i+1}
-            )
+            batch_texts.append(chunk)
+            batch_memory_types.append("lore")
+            batch_metadatas.append({"entity_type": "GlobalHistory", "part": i+1})
+
+    # Execute long running network requests (vector DB batch insertion) OUTSIDE the SQL transaction
+    if batch_texts:
+        await add_batch_to_memory(
+            texts=batch_texts,
+            memory_types=batch_memory_types,
+            metadatas=batch_metadatas
+        )
+
+    # Execute SQL insertions efficiently with add_all inside a short-lived transaction
+    if sql_instances:
+        async for session in get_session():
+            session.add_all(sql_instances)
+            await session.commit()
+            break # Only one session needed
