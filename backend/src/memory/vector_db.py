@@ -142,3 +142,44 @@ async def get_relevant_context(query: str, universe_id: str, limit: int = 3, fil
     formaté pour l'Agent Narrateur, STRICTEMENT filtré par universe_id.
     """
     return await asyncio.to_thread(_get_relevant_context_sync, query, str(universe_id), limit, filter_type)
+
+
+def _add_batch_to_memory_sync(texts: list[str], memory_types: list[str], metadatas: list[dict] = None):
+    """Fonction synchrone pour ajouter un lot à ChromaDB"""
+    if not texts:
+        return []
+
+    c = _get_or_init_collection()
+
+    doc_ids = []
+    final_metadatas = []
+
+    for i, (text, memory_type) in enumerate(zip(texts, memory_types)):
+        if memory_type not in VALID_MEMORY_TYPES:
+            raise ValueError(f"memory_type doit être l'un de: {VALID_MEMORY_TYPES}")
+
+        doc_id = str(uuid.uuid4())
+        doc_ids.append(doc_id)
+
+        meta = {"type": memory_type}
+        if metadatas and i < len(metadatas) and metadatas[i]:
+            meta.update(metadatas[i])
+
+        if "universe_id" not in meta:
+            import logging
+            logging.warning("Ajout en mémoire sans 'universe_id' dans les métadonnées !")
+
+        final_metadatas.append(meta)
+
+    c.add(
+        documents=texts,
+        metadatas=final_metadatas,
+        ids=doc_ids
+    )
+    return doc_ids
+
+async def add_batch_to_memory(texts: list[str], memory_types: list[str], metadatas: list[dict] = None):
+    """
+    Ajoute un lot de documents texte à la mémoire persistante ChromaDB de manière asynchrone.
+    """
+    return await asyncio.to_thread(_add_batch_to_memory_sync, texts, memory_types, metadatas)
