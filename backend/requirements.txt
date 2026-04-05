@@ -10,3 +10,4 @@ pytest-asyncio
 chromadb
 python-dotenv
 google-genai
+aiofiles
