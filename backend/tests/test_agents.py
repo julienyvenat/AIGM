@@ -31,7 +31,9 @@ async def test_generate_scene_image_gemini(mock_gemini_client):
     mock_result.generated_images = [mock_image]
     mock_gemini_client.models.generate_images.return_value = mock_result
 
-    with patch('os.makedirs'), patch('builtins.open', new_callable=MagicMock):
+    mock_file = AsyncMock()
+    mock_file.__aenter__.return_value.write = AsyncMock()
+    with patch('os.makedirs'), patch('aiofiles.open', return_value=mock_file):
         result = await generate_scene_image("A beautiful landscape")
 
     assert result is not None

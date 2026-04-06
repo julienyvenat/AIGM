@@ -1,3 +1,4 @@
+import asyncio
 import aiofiles
 import os
 import logging
@@ -115,7 +116,7 @@ async def download_image_locally(url: str, filename_prefix: str = "portrait") ->
                 ext = "jpg"
 
             filename = f"{filename_prefix}_{uuid.uuid4().hex}.{ext}"
-                await asyncio.to_thread(os.makedirs, "backend/images", exist_ok=True)
+            await asyncio.to_thread(os.makedirs, "backend/images", exist_ok=True)
             filepath = os.path.join("backend/images", filename)
 
             async with aiofiles.open(filepath, "wb") as f:
