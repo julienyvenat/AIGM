@@ -1,4 +1,3 @@
-from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -10,20 +9,10 @@ class Universe(SQLModel, table=True):
     description: str
     image_url: Optional[str] = Field(default=None)
 
-    characters: list["Character"] = Relationship(back_populates="universe")
-    npcs: list["WorldNPCTable"] = Relationship(back_populates="universe")
-    locations: list["WorldLocationTable"] = Relationship(back_populates="universe")
-    factions: list["WorldFactionTable"] = Relationship(back_populates="universe")
-
-class Item(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    character_id: uuid.UUID = Field(foreign_key="character.id")
-    name: str
-    item_type: str
-    damage_dice: Optional[str] = Field(default=None)
-    quantity: int = Field(default=1)
-
-    character: "Character" | None = Relationship(back_populates="items")
+    characters: List["Character"] = Relationship(back_populates="universe")
+    npcs: List["WorldNPCTable"] = Relationship(back_populates="universe")
+    locations: List["WorldLocationTable"] = Relationship(back_populates="universe")
+    factions: List["WorldFactionTable"] = Relationship(back_populates="universe")
 
 class Character(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -53,8 +42,18 @@ class Character(SQLModel, table=True):
     spell_slots: str = Field(default="{}")
     class_resources: str = Field(default="{}")
 
-    items: list["Item"] = Relationship(back_populates="character")
-    universe: "Universe" | None = Relationship(back_populates="characters")
+    items: List["Item"] = Relationship(back_populates="character")
+    universe: Optional["Universe"] = Relationship(back_populates="characters")
+
+class Item(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    character_id: uuid.UUID = Field(foreign_key="character.id")
+    name: str
+    item_type: str
+    damage_dice: Optional[str] = Field(default=None)
+    quantity: int = Field(default=1)
+
+    character: Optional["Character"] = Relationship(back_populates="items")
 
 class ChatMessage(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -78,7 +77,7 @@ class WorldNPCTable(SQLModel, table=True):
     y: int = Field(default=0)
     is_in_combat: bool = Field(default=False)
 
-    universe: "Universe" | None = Relationship(back_populates="npcs")
+    universe: Optional["Universe"] = Relationship(back_populates="npcs")
 
 class WorldLocationTable(SQLModel, table=True):
     __tablename__ = "world_location"
@@ -89,7 +88,7 @@ class WorldLocationTable(SQLModel, table=True):
     # Storing lists as JSON strings in sqlite
     points_interet: str = Field(default="[]")
 
-    universe: "Universe" | None = Relationship(back_populates="locations")
+    universe: Optional["Universe"] = Relationship(back_populates="locations")
 
 class WorldFactionTable(SQLModel, table=True):
     __tablename__ = "world_faction"
@@ -100,4 +99,4 @@ class WorldFactionTable(SQLModel, table=True):
     # Storing lists as JSON strings in sqlite
     relations_politiques: str = Field(default="[]")
 
-    universe: "Universe" | None = Relationship(back_populates="factions")
+    universe: Optional["Universe"] = Relationship(back_populates="factions")

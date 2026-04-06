@@ -4,7 +4,7 @@ import uuid
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from engine.models import Character
+from src.engine.models import Character
 from openai import AsyncOpenAI
 from google import genai
 from google.genai import types
