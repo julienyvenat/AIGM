@@ -1,5 +1,5 @@
 from sqlmodel import select
-from src.engine.models import Character, WorldNPCTable
+from engine.models import Character, WorldNPCTable
 import json
 import os
 import uuid
@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 from google import genai
 from google.genai import types
 
-from src.engine.tools import get_combat_state, move_entity, execute_attack, roll_dice
+from engine.tools import get_combat_state, move_entity, execute_attack, roll_dice
 
 logger = logging.getLogger(__name__)
 

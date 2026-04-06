@@ -8,7 +8,7 @@ from openai import OpenAI
 from google import genai
 from google.genai import types
 
-from src.engine.models import Character
+from engine.models import Character
 
 class ArbitratorLLMOutput(BaseModel):
     action_type: str = Field(description="Type of action (attack, spell, dodge, skill_check, etc.)")

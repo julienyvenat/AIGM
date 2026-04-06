@@ -11,10 +11,11 @@ os.environ['IMAGE_PROVIDER'] = 'openai'
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlmodel import SQLModel, select
 
-import src.main as main
-from src.engine.database import get_session
-from src.engine.models import Universe, WorldNPCTable, Character
+from engine.models import Universe, WorldNPCTable, Character
+from main import app
+from engine.database import get_session
 
 # In-memory database URL
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -28,11 +29,9 @@ async def override_get_session():
     async with TestingSessionLocal() as session:
         yield session
 
-main.app.dependency_overrides[get_session] = override_get_session
+app.dependency_overrides[get_session] = override_get_session
 
-client = TestClient(main.app)
-
-from sqlmodel import SQLModel, select
+client = TestClient(app)
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
@@ -74,15 +73,15 @@ class MockArbitrationResult:
         self.consumed_resource_name = None
 
 @pytest.mark.asyncio
-@patch('src.agents.universe_architect.client.chat.completions.create', new_callable=AsyncMock)
-@patch('src.agents.universe_architect.client.beta.chat.completions.parse', new_callable=AsyncMock)
-@patch('src.world_builder.world_router.add_to_memory', new_callable=AsyncMock)
-@patch('src.main.generate_scene_image', new_callable=AsyncMock)
-@patch('src.agents.universe_architect.generate_scene_image', new_callable=AsyncMock)
-@patch('src.main.generate_narrator_response', new_callable=AsyncMock)
-@patch('src.agents.arbitrator.arbitrate_action', new_callable=AsyncMock)
-@patch('src.main.get_relevant_context', new_callable=AsyncMock)
-@patch('src.main.analyze_scene', new_callable=AsyncMock)
+@patch('agents.universe_architect.client.chat.completions.create', new_callable=AsyncMock)
+@patch('agents.universe_architect.client.beta.chat.completions.parse', new_callable=AsyncMock)
+@patch('world_builder.world_router.add_to_memory', new_callable=AsyncMock)
+@patch('main.generate_scene_image', new_callable=AsyncMock)
+@patch('agents.universe_architect.generate_scene_image', new_callable=AsyncMock)
+@patch('main.generate_narrator_response', new_callable=AsyncMock)
+@patch('agents.arbitrator.arbitrate_action', new_callable=AsyncMock)
+@patch('main.get_relevant_context', new_callable=AsyncMock)
+@patch('main.analyze_scene', new_callable=AsyncMock)
 async def test_e2e_game_flow(
     mock_analyze_scene,
     mock_get_context,

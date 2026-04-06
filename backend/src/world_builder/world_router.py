@@ -5,10 +5,10 @@ from typing import List
 from pydantic import BaseModel
 import uuid
 
-from src.engine.database import get_session
-from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character
-from src.agents.universe_architect import generate_universe_from_prompt
-from src.memory.vector_db import add_to_memory
+from engine.database import get_session
+from engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character
+from agents.universe_architect import generate_universe_from_prompt
+from memory.vector_db import add_to_memory
 
 router = APIRouter()
 

@@ -6,9 +6,9 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
 
-from src.world_builder.schemas import WorldKnowledge
-from src.engine.image_generator import generate_scene_image
-from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable
+from world_builder.schemas import WorldKnowledge
+from engine.image_generator import generate_scene_image
+from engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
