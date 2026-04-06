@@ -11,6 +11,21 @@ cd ..
 backend/run.sh
 ```
 
+## Configuration & Installation
+
+### Variables d'environnement requises
+Créez un fichier `.env` à la racine de `backend/` avec :
+```env
+OPENAI_API_KEY="votre_cle_openai"
+SECRET_KEY="votre_cle_secrete_pour_jwt" # par ex: `openssl rand -hex 32`
+ALGORITHM="HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+```
+
+### Authentification (API)
+- `POST /auth/register` : Créer un utilisateur (`username`, `password`).
+- `POST /auth/token` : S'authentifier et récupérer un token JWT.
+
 ## Installation et lancement du Frontend
 
 ```bash
