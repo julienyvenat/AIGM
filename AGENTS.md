@@ -38,3 +38,8 @@ Le backend utilise le standard MCP. L'architecture est la suivante :
  * **Tests E2E (End-to-End) :** * Les tests globaux (pytest) doivent utiliser fastapi.testclient.TestClient.
    * **BDD Isolée :** Utilise systématiquement app.dependency_overrides avec une base en mémoire (sqlite:///:memory:) pour protéger les données de production.
    * **Mocks :** Mock toujours les appels réseau asynchrones vers les LLM (unittest.mock.patch) pour des tests rapides et prédictibles.
+## 7. Logique Multi-joueurs et Sessions
+* **Séparation Identity/Instance :** Un `User` possède des `Characters`. Une `GameSession` instancie un `Universe`. Plusieurs `Characters` peuvent rejoindre une `GameSession`.
+* **Authentification :** Toutes les routes API (sauf login/register) et la connexion WebSocket doivent être protégées par un check de token JWT.
+* **Broadcasting :** Les messages de chat, les changements de `game_mode` et les `STATS_UPDATE` doivent être diffusés à TOUS les participants d'une `GameSession` via le `ConnectionManager`.
+* **Persistence de Session :** L'état du combat (X,Y, HP des monstres) doit être sauvé en base de données régulièrement pour permettre la reprise de partie fluide.
