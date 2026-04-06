@@ -9,20 +9,20 @@ load_dotenv()
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from world_builder.world_router import router as world_router
+from src.world_builder.world_router import router as world_router
 
-from engine.database import init_db, get_session
-from engine.models import ChatMessage
+from src.engine.database import init_db, get_session
+from src.engine.models import ChatMessage
 from sqlmodel import select, or_
-from agents.router import analyze_player_intent, IntentType
-from agents.narrator import generate_narrator_response
-from memory.vector_db import get_relevant_context
+from src.agents.router import analyze_player_intent, IntentType
+from src.agents.narrator import generate_narrator_response
+from src.memory.vector_db import get_relevant_context
 
-from agents.scene_editor import analyze_scene, ImageDecision
-from agents.image_prompter import generate_image_prompt
+from src.agents.scene_editor import analyze_scene, ImageDecision
+from src.agents.image_prompter import generate_image_prompt
 from pydantic import BaseModel
-from engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
-from engine.models import Character, WorldNPCTable
+from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
+from src.engine.models import Character, WorldNPCTable
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
@@ -128,7 +128,7 @@ manager = ConnectionManager()
 @app.get("/characters/by-name/{name}")
 async def get_or_create_character_by_name(name: str):
     try:
-        from engine.database import get_session
+        from src.engine.database import get_session
         async for session in get_session():
             statement = select(Character).where(Character.name == name)
             result = await session.execute(statement)
@@ -182,7 +182,7 @@ async def set_reference_portrait(character_id: str, request: ReferenceSetRequest
     """Met à jour l'URL du portrait de référence d'un personnage."""
     try:
         from sqlalchemy.ext.asyncio import AsyncSession
-        from engine.database import get_session
+        from src.engine.database import get_session
         import uuid
 
         async for session in get_session():
@@ -243,7 +243,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     )
 
                     # Also send combat state
-                    from agents.narrator import get_combat_state
+                    from src.agents.narrator import get_combat_state
                     combat_state = await get_combat_state(session, char.universe_id)
                     await manager.send_personal_message(
                         {"type": "combat_state", "entities": combat_state},
@@ -339,7 +339,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         background_tasks.add(task)
                         task.add_done_callback(background_tasks.discard)
 
-                        from agents.narrator import get_combat_state
+                        from src.agents.narrator import get_combat_state
                         c_state = await get_combat_state(session, char.universe_id)
                         await manager.broadcast({
                             "type": "combat_state",
@@ -502,7 +502,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag + '\n\n' + arbitration_context, game_mode=game_mode)
 
                     if game_mode == "BATTLE":
-                        from agents.narrator import get_combat_state
+                        from src.agents.narrator import get_combat_state
                         c_state = await get_combat_state(session, char.universe_id)
                         await manager.broadcast({
                             "type": "combat_state",
