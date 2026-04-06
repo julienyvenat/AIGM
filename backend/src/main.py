@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from src.world_builder.world_router import router as world_router
+from src.auth.router import auth_router
 
 from src.engine.database import init_db, get_session
 from src.engine.models import ChatMessage
@@ -81,6 +82,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(world_router)
+app.include_router(auth_router)
 import os
 from fastapi.staticfiles import StaticFiles
 os.makedirs("backend/images", exist_ok=True)
