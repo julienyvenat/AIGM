@@ -1,4 +1,5 @@
-import uuid
+with open("backend/src/engine/models.py", "w") as f:
+    f.write("""import uuid
 from datetime import datetime
 from typing import List, Optional
 from sqlmodel import Field, Relationship, SQLModel
@@ -98,3 +99,4 @@ class Universe(SQLModel, table=True):
     npcs: List[WorldNPCTable] = Relationship(back_populates="universe")
     locations: List[WorldLocationTable] = Relationship(back_populates="universe")
     factions: List[WorldFactionTable] = Relationship(back_populates="universe")
+""")

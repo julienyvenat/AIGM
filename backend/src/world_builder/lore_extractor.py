@@ -76,9 +76,9 @@ def merge_world_knowledges(knowledges: List[WorldKnowledge]) -> WorldKnowledge:
 
 # Implémentation du stockage hybride optimisé
 async def store_world_knowledge(knowledge: WorldKnowledge):
-    from engine.database import get_session
-    from engine.models import WorldNPCTable, WorldLocationTable, WorldFactionTable
-    from memory.vector_db import add_batch_to_memory
+    from src.engine.database import get_session
+    from src.engine.models import WorldNPCTable, WorldLocationTable, WorldFactionTable
+    from src.memory.vector_db import add_batch_to_memory
 
     sql_instances = []
 
