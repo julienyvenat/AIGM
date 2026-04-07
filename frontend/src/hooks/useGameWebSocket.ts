@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Entity } from '../components/BattleMap';
+import { useAuth } from '../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 export type SenderType = 'user' | 'server';
 export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image' | 'battlemap_update';
@@ -14,16 +16,18 @@ export interface GameMessage {
   timestamp?: string;
 }
 
-export function useGameWebSocket(playerId: string | null, universeId: string | null, onStatsUpdate?: (character: Record<string, unknown>) => void) {
+export function useGameWebSocket(playerId: string | null, sessionId: string | null, onStatsUpdate?: (character: Record<string, unknown>) => void) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [currentSceneImage, setCurrentSceneImage] = useState<string | null>(null);
   const [battlemapImageUrl, setBattlemapImageUrl] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const { token } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (!playerId) {
+    if (!playerId || !sessionId || !token) {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -36,9 +40,8 @@ export function useGameWebSocket(playerId: string | null, universeId: string | n
     let isMounted = true;
 
     const connect = () => {
-      const baseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
-      const uId = universeId || 'default';
-      const wsUrl = `${baseUrl}/${uId}/${playerId}`;
+      const baseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+      const wsUrl = `${baseUrl}/ws/${sessionId}/${playerId}?token=${token}`;
 
       console.log(`Attempting to connect to ${wsUrl}...`);
       const ws = new WebSocket(wsUrl);
@@ -113,18 +116,26 @@ export function useGameWebSocket(playerId: string | null, universeId: string | n
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (!isMounted) return;
-        console.log('WebSocket disconnected');
+        console.log(`WebSocket disconnected (Code: ${event.code}, Reason: ${event.reason})`);
         setIsConnected(false);
         wsRef.current = null;
 
-        // Reconnect after 3 seconds
-        reconnectTimer = window.setTimeout(() => {
-          if (isMounted) {
-            connect();
-          }
-        }, 3000);
+        if (event.code === 1008) {
+           window.alert('Violation de politique (Erreur 1008) : Session invalide ou non autorisée.');
+           navigate('/dashboard');
+           return;
+        }
+
+        // Reconnect after 3 seconds for unexpected closures
+        if (event.code !== 1000) {
+           reconnectTimer = window.setTimeout(() => {
+             if (isMounted) {
+               connect();
+             }
+           }, 3000);
+        }
       };
 
       ws.onerror = (error) => {
@@ -139,11 +150,11 @@ export function useGameWebSocket(playerId: string | null, universeId: string | n
       isMounted = false;
       clearTimeout(reconnectTimer);
       if (wsRef.current) {
-        wsRef.current.close();
+        wsRef.current.close(1000, "Unmounting component");
         wsRef.current = null;
       }
     };
-  }, [playerId, universeId, onStatsUpdate]);
+  }, [playerId, sessionId, token, navigate, onStatsUpdate]);
 
   const sendMessage = useCallback((text: string) => {
     if (!text.trim()) return;
