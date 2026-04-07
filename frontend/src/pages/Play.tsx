@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useGameWebSocket } from '../hooks/useGameWebSocket';
 import { ChatPanel } from '../components/ChatPanel';
 import { BattleMap } from '../components/BattleMap';
@@ -7,6 +7,7 @@ import { SceneViewer } from '../components/SceneViewer';
 import { CharacterManager } from '../components/CharacterManager';
 import { CharacterSidePanel } from '../components/CharacterSidePanel';
 import { CharacterModal } from '../components/CharacterModal';
+import { useAuth } from '../hooks/useAuth';
 
 export interface Character {
   id: string;
@@ -30,14 +31,13 @@ export interface Character {
 }
 
 export function Play() {
-  const { universeId } = useParams<{ universeId: string }>();
-  const [searchParams] = useSearchParams();
-  const characterName = searchParams.get('character');
+  const { sessionId, characterId } = useParams<{ sessionId: string, characterId: string }>();
   const navigate = useNavigate();
+  const { token } = useAuth();
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [showCharacterManager, setShowCharacterManager] = useState(false);
-  const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
+  const [activePlayerId, setActivePlayerId] = useState<string | null>(characterId || null);
   const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -45,21 +45,25 @@ export function Play() {
     setCharacter(prev => prev ? { ...prev, ...updatedCharacter } as Character : updatedCharacter as Character);
   }, []);
 
-  // We pass universeId down to WebSocket hook so it connects properly
-  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, universeId || null, handleStatsUpdate);
+  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
 
   useEffect(() => {
-    if (!universeId || !characterName) {
-      navigate('/');
+    if (!sessionId || !characterId || !token) {
+      navigate('/dashboard');
       return;
     }
 
     const fetchCharacter = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/universes/${universeId}/characters/by-name/${encodeURIComponent(characterName)}`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/characters/${characterId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
         if (!response.ok) {
             console.error("Failed to fetch character");
-            navigate('/');
+            navigate('/dashboard');
             return;
         }
         const charData = await response.json();
@@ -68,10 +72,8 @@ export function Play() {
 
         if (!charData.reference_portrait_url) {
           setShowCharacterManager(true);
-          setActivePlayerId(null);
         } else {
           setShowCharacterManager(false);
-          setActivePlayerId(charData.id);
         }
       } catch (error) {
         console.error("Error fetching character:", error);
@@ -81,7 +83,7 @@ export function Play() {
     };
 
     fetchCharacter();
-  }, [universeId, characterName, navigate]);
+  }, [sessionId, characterId, navigate, token]);
 
   const handleCharacterManagerComplete = (updatedCharacter: Character) => {
     setCharacter(updatedCharacter);
