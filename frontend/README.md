@@ -71,3 +71,21 @@ export default defineConfig([
   },
 ])
 ```
+
+## Authentification & Routage Protégé (Phase 3)
+
+Le frontend implémente maintenant un système complet d'authentification et de routage protégé.
+
+### Fonctionnement
+
+- **AuthContext** (`src/context/AuthContext.tsx`) :
+  Gère l'état d'authentification global. Le token JWT (retourné par le backend) est sauvegardé dans le `localStorage`. Le contexte s'occupe de le charger, de le parser pour en extraire le `user`, et propose des fonctions de `login`, `register`, et `logout`.
+
+- **ProtectedRoute** (`src/components/ProtectedRoute.tsx`) :
+  Un composant qui enveloppe les routes privées (ex: `/dashboard`, `/studio`, `/play`). Si un utilisateur tente d'y accéder sans être authentifié, il est immédiatement redirigé vers `/login`.
+
+- **Dashboard** (`src/pages/Dashboard.tsx`) :
+  Point d'entrée pour un joueur connecté, permettant de retrouver la liste de ses personnages et de rejoindre les sessions en cours.
+
+- **WebSocket Protégé** (`src/hooks/useGameWebSocket.ts`) :
+  Le flux WebSocket utilise maintenant l'identifiant de la session, l'identifiant du personnage et passe le JWT dans l'URL pour se connecter : `ws://[host]/ws/{session_id}/{character_id}?token={token}`.
