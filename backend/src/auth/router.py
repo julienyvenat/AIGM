@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
@@ -31,12 +32,12 @@ async def register(user_data: UserCreate, session: AsyncSession = Depends(get_se
     return {"message": "User created successfully", "user_id": str(new_user.id)}
 
 @auth_router.post("/token", response_model=Token)
-async def login(user_data: UserCreate, session: AsyncSession = Depends(get_session)):
-    query = select(User).where(User.username == user_data.username)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: AsyncSession = Depends(get_session)):
+    query = select(User).where(User.username == form_data.username)
     result = await session.execute(query)
     user = result.scalars().first()
 
-    if not user or not verify_password(user_data.password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
