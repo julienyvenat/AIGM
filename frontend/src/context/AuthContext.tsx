@@ -85,6 +85,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Détails de l'erreur 422 :", errorData);
       throw new Error('Login failed');
     }
 
