@@ -11,3 +11,6 @@ chromadb
 python-dotenv
 google-genai
 aiofiles
+PyJWT
+bcrypt
+python-multipart
