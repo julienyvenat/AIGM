@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { apiFetch } from '../utils/api';
+
+interface Universe {
+  id: string;
+  name: string;
+}
 
 interface Character {
   id: number;
@@ -19,6 +25,11 @@ export const Dashboard = () => {
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [sessions, setSessions] = useState<GameSession[]>([]);
+  const [universes, setUniverses] = useState<Universe[]>([]);
+  const [newCharName, setNewCharName] = useState("");
+  const [newCharUniverseId, setNewCharUniverseId] = useState("");
+  const [creatingChar, setCreatingChar] = useState(false);
+  const [charCreateError, setCharCreateError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,11 +39,7 @@ export const Dashboard = () => {
         const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
         // Fetch User's Characters
-        const charsResponse = await fetch(`${baseUrl}/characters/`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const charsResponse = await apiFetch(`${baseUrl}/characters/`);
 
         if (!charsResponse.ok) {
            throw new Error('Failed to fetch characters');
@@ -41,12 +48,17 @@ export const Dashboard = () => {
         const charsData = await charsResponse.json();
         setCharacters(charsData);
 
+
+        // Fetch Universes
+        const universesResponse = await apiFetch(`${baseUrl}/universes`);
+        if (universesResponse.ok) {
+           const universesData = await universesResponse.json();
+           setUniverses(universesData);
+           if (universesData.length > 0) setNewCharUniverseId(universesData[0].id);
+        }
+
         // Fetch Game Sessions
-        const sessionsResponse = await fetch(`${baseUrl}/sessions/`, {
-           headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const sessionsResponse = await apiFetch(`${baseUrl}/sessions/`);
 
         if (!sessionsResponse.ok) {
            throw new Error('Failed to fetch game sessions');
@@ -75,6 +87,36 @@ export const Dashboard = () => {
     navigate('/login');
   };
 
+
+  const handleCreateCharacter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCharCreateError(null);
+    setCreatingChar(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await apiFetch(`${baseUrl}/characters/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newCharName,
+          universe_id: newCharUniverseId,
+          description: "Créé depuis le dashboard"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Erreur lors de la création du personnage");
+      }
+
+      const newChar = await response.json();
+      setCharacters([...characters, newChar]);
+      setNewCharName("");
+    } catch (err: unknown) {
+      setCharCreateError(err instanceof Error ? err.message : "Erreur de création");
+    } finally {
+      setCreatingChar(false);
+    }
+  };
+
   const getSessionForCharacter = (char: Character) => {
      return sessions.find((s: GameSession) => s.id === char.game_session_id);
   };
@@ -100,6 +142,45 @@ export const Dashboard = () => {
           {error}
         </div>
       )}
+
+
+      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-8">
+        <h2 className="text-2xl font-bold text-emerald-400 mb-4">Créer un Nouveau Personnage</h2>
+        {charCreateError && <div className="text-red-400 mb-4">{charCreateError}</div>}
+        <form onSubmit={handleCreateCharacter} className="flex flex-col md:flex-row gap-4 items-end">
+          <div className="flex-1 w-full">
+            <label className="block text-sm font-medium text-gray-400 mb-1">Univers</label>
+            <select
+              value={newCharUniverseId}
+              onChange={(e) => setNewCharUniverseId(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              required
+            >
+              {universes.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1 w-full">
+            <label className="block text-sm font-medium text-gray-400 mb-1">Nom du personnage</label>
+            <input
+              type="text"
+              value={newCharName}
+              onChange={(e) => setNewCharName(e.target.value)}
+              placeholder="Ex: Kael..."
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={creatingChar || !newCharName.trim() || universes.length === 0}
+            className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold rounded-md transition-colors w-full md:w-auto h-[42px]"
+          >
+            {creatingChar ? 'Création...' : 'Créer'}
+          </button>
+        </form>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">

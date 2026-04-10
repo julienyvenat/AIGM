@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from src.memory.vector_db import add_to_memory
 from src.engine.database import init_db, get_session
-from src.engine.models import Character, Item
+from src.engine.models import Character, Item, Universe
 
 async def main():
     logger.info("Starting seed script...")
@@ -38,6 +38,14 @@ async def main():
     # 3. Fill the SQL Database (Characters and Items)
     logger.info("Injecting SQL Entities (Characters and Items)...")
 
+    uni_id = uuid.uuid4()
+    uni = Universe(id=uni_id, name="Test Universe", description="A test")
+    async for session in get_session():
+        session.add(uni)
+        await session.commit()
+        break
+
+
     # Generate fixed UUIDs or just new ones
     aragorn_id = uuid.uuid4()
     goblin_id = uuid.uuid4()
@@ -45,7 +53,7 @@ async def main():
     # Create Player (Aragorn)
     aragorn = Character(
         id=aragorn_id,
-        name="Aragorn",
+        name="Aragorn", universe_id=uni.id,
         is_pc=True,
         hp=20,
         max_hp=20,
@@ -67,7 +75,7 @@ async def main():
     # Create Monster (Goblin)
     goblin = Character(
         id=goblin_id,
-        name="Gobelin Gardien",
+        name="Gobelin Gardien", universe_id=uni.id,
         is_pc=False,
         hp=7,
         max_hp=7,

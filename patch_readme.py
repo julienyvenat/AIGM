@@ -1,10 +1,61 @@
-with open("README.md", "r") as f:
+with open('README.md', 'r') as f:
     content = f.read()
 
-import re
+new_readme = """# AIGM
+Artificial Intelligence Game Master for RPG
 
-# Remove the duplicated section
-content = re.sub(r'## Configuration & Installation\n\n### Variables d\'environnement requises\nCréez un fichier `\.env` à la racine de `backend/` avec :\n```env\nOPENAI_API_KEY="votre_cle_openai"\nSECRET_KEY="votre_cle_secrete_pour_jwt" # par ex: `openssl rand -hex 32`\nALGORITHM="HS256"\nACCESS_TOKEN_EXPIRE_MINUTES=1440\n```\n\n### Authentification \(API\)\n- `POST /auth/register` : Créer un utilisateur \(`username`, `password`\)\.\n- `POST /auth/token` : S\'authentifier et récupérer un token JWT\.\n\n', '', content, count=1)
+## Installation et lancement du Backend
 
-with open("README.md", "w") as f:
-    f.write(content)
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m src.scripts.seed_data
+cd ..
+backend/run.sh
+```
+
+## Installation et lancement du Frontend
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+Modifier le `frontend/.env` afin d'y insérer le bon nom de domaine du backend.
+
+Copiez le fichier `backend/.env.exemple` vers `backend/.env` et renseignez les variables.
+
+**Nouveauté (Auth & Personnages) :**
+Toutes les requêtes vers le backend nécessitent désormais une authentification par JWT. Les requêtes via l'interface utilisent un intercepteur (`apiFetch`). Si vous effectuez des appels manuels vers l'API, assurez-vous de passer le header `Authorization: Bearer <votre_token>`.
+
+# Test
+
+C'est une étape historique pour ton projet ! Si Jules a terminé l'intégration du **Lobby**, du **Générateur de portraits avec stockage local**, du **Déclencheur d'images intelligent** et **des flux d'authentification des Sessions**, tu ne joues plus à un prototype : tu as un véritable **Jeu de Rôle Assisté par IA (AITTRPG)** fonctionnel.
+
+Voici comment tu peux savourer ton travail et tester la puissance de ce que vous avez bâti :
+
+### 🧪 Le "Crash Test" de Cohérence et d'Intégration (Session & Personnages)
+
+Pour vérifier que tout fonctionne comme prévu, je te suggère ce scénario de test précis :
+
+1.  **Enregistrement / Connexion :** Créez un compte ou connectez-vous.
+2.  **Création du héros (Dashboard) :** Dans le nouveau Dashboard, sélectionnez un Univers et nommez votre personnage (ex: "Valerius").
+3.  **Lancement (Home) :** Allez sur "Sélection Univers", sélectionnez votre Univers, puis choisissez "Valerius" pour lancer une nouvelle partie. La session vous sera associée.
+4.  **Le Test du MJ :** Une fois dans le jeu, tape : *"Je pousse les doubles portes de la salle du trône et je m'avance vers le roi."*
+    * **L'Intelligence :** Le `scene_editor` devrait décider de **GÉNÉRER** car c'est un changement de décor majeur.
+5.  **Le Test du Dialogue :** Tape ensuite : *"Sire, je viens vous avertir d'une menace imminente."*
+    * **L'Économie :** Normalement, le `scene_editor` devrait décider d'**IGNORER** la génération d'image car c'est juste du dialogue. Le chat doit rester fluide sans latence LLM/Image.
+
+### 🛠️ Dernières vérifications techniques
+Avant de crier victoire, jette un œil rapide à ces deux points :
+* **Dossier Images :** Vérifie dans ton dossier `backend/images`. Tu devrais y voir le fichier `.png` de ton personnage ou de tes scènes.
+* **Console Network :** Vérifiez sur le navigateur que vos appels partent bien avec le Header `Authorization: Bearer <votre_token>`.
+* **Tests unitaires de sécurité :** Exécutez `export PYTHONPATH=backend && pytest backend/test_integration.py` pour valider que le backend repousse correctement (code HTTP 403) un utilisateur essayant de se connecter avec le personnage d'un autre joueur.
+"""
+
+with open('README.md', 'w') as f:
+    f.write(new_readme)
+
