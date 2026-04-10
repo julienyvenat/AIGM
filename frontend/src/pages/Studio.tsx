@@ -1,3 +1,4 @@
+import { apiFetch } from "../utils/api";
 import { useState, useEffect } from 'react';
 
 export function Studio() {
@@ -15,7 +16,7 @@ export function Studio() {
 
   const fetchUniverses = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/universes`);
+      const res = await apiFetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/universes`);
       const data = await res.json();
       setUniverses(data);
       if (data.length > 0 && !selectedUniverseId) {

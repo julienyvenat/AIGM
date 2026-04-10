@@ -4,3 +4,4 @@ backend/chroma_data/
 backend/venv
 .venv/
 testenv/
+venv/

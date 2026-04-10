@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiFetch } from '../utils/api';
+
+interface Character {
+  id: string;
+  name: string;
+  universe_id: string;
+}
 
 interface Universe {
   id: string;
@@ -11,12 +18,15 @@ interface Universe {
 export function Home() {
   const [universes, setUniverses] = useState<Universe[]>([]);
   const [selectedUniverse, setSelectedUniverse] = useState<Universe | null>(null);
-  const [characterName, setCharacterName] = useState('');
+  const [myCharacters, setMyCharacters] = useState<Character[]>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/universes`)
+    apiFetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/universes`)
       .then(res => res.json())
       .then(data => {
         setUniverses(data);
@@ -28,13 +38,71 @@ export function Home() {
       });
   }, []);
 
-  const handleConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUniverse || !characterName.trim()) return;
+    useEffect(() => {
+    // Fetch characters too
+    apiFetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/characters/`)
+      .then(res => res.json())
+      .then(data => setMyCharacters(data))
+      .catch(err => console.error("Failed to load characters", err));
+  }, []);
 
-    // We navigate to Play with the state, or Play can fetch it
-    navigate(`/play/${selectedUniverse.id}?character=${encodeURIComponent(characterName.trim())}`);
+
+  const availableCharacters = selectedUniverse
+    ? myCharacters.filter(c => c.universe_id === selectedUniverse.id)
+    : [];
+
+  const handleCreateSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionError(null);
+
+    if (!selectedUniverse || !selectedCharacterId) {
+      setActionError("Veuillez sélectionner un personnage.");
+      return;
+    }
+
+    if (availableCharacters.length === 0) {
+      setActionError("Vous devez d'abord créer un personnage pour cet univers depuis le Dashboard.");
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+      // 1. Create session
+      const sessionRes = await apiFetch(`${baseUrl}/sessions/`, {
+        method: 'POST',
+        body: JSON.stringify({ universe_id: selectedUniverse.id })
+      });
+
+      if (!sessionRes.ok) throw new Error("Erreur de création de session");
+      const sessionData = await sessionRes.json();
+
+      // 2. Join session
+      const joinRes = await apiFetch(`${baseUrl}/sessions/${sessionData.id}/join`, {
+        method: 'POST',
+        body: JSON.stringify({ character_id: selectedCharacterId })
+      });
+
+      if (!joinRes.ok) {
+         const errData = await joinRes.json();
+         throw new Error(errData.detail || "Erreur lors de la jointure");
+      }
+
+      // 3. Navigate to play
+      navigate(`/play/${sessionData.id}/${selectedCharacterId}`);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setActionError(err.message);
+      } else {
+        setActionError("Une erreur inattendue s'est produite.");
+      }
+    } finally {
+      setIsCreating(false);
+    }
   };
+
+
 
   return (
     <div className="p-8 flex flex-col items-center h-full overflow-y-auto">
@@ -80,24 +148,34 @@ export function Home() {
       {selectedUniverse && (
         <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-md animate-fade-in-up">
           <h2 className="text-xl font-bold mb-4 text-center">Rejoindre {selectedUniverse.name}</h2>
-          <form onSubmit={handleConnect} className="flex flex-col gap-4">
+          {actionError && <div className="text-red-400 mb-4 text-sm">{actionError}</div>}
+          <form onSubmit={handleCreateSession} className="flex flex-col gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">Nom du personnage</label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: Elara, Kael..."
-                value={characterName}
-                onChange={(e) => setCharacterName(e.target.value)}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
+              <label className="block text-sm font-medium text-gray-400 mb-1">Jouer avec :</label>
+              {availableCharacters.length > 0 ? (
+                <select
+                  value={selectedCharacterId}
+                  onChange={(e) => setSelectedCharacterId(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  required
+                >
+                  <option value="" disabled>Sélectionnez un de vos personnages</option>
+                  {availableCharacters.map(char => (
+                    <option key={char.id} value={char.id}>{char.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-amber-400 text-sm bg-amber-900/30 p-3 rounded">
+                  Vous devez d'abord créer un personnage pour cet univers depuis le Dashboard.
+                </div>
+              )}
             </div>
             <button
               type="submit"
-              disabled={!characterName.trim()}
+              disabled={isCreating || availableCharacters.length === 0 || !selectedCharacterId}
               className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold rounded-md transition-colors"
             >
-              Entrer dans l'aventure
+              {isCreating ? "Création..." : "Lancer une nouvelle session"}
             </button>
           </form>
         </div>

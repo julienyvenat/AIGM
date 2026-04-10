@@ -122,6 +122,7 @@ class GameSession(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     universe_id: uuid.UUID = Field(foreign_key="universe.id")
     status: GameSessionStatus = Field(default=GameSessionStatus.LOBBY)
+    host_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     current_battlemap_url: Optional[str] = Field(default=None)
     game_mode: str = Field(default="NARRATIVE")
 
