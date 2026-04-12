@@ -1,13 +1,20 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from enum import Enum
 from sqlmodel import Field, Relationship, SQLModel
+import sqlalchemy
 
 class GameSessionStatus(str, Enum):
     LOBBY = "LOBBY"
     ACTIVE = "ACTIVE"
     ENDED = "ENDED"
+
+class ItemType(str, Enum):
+    WEAPON = "WEAPON"
+    ARMOR = "ARMOR"
+    CONSUMABLE = "CONSUMABLE"
+    MISC = "MISC"
 
 class User(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -31,13 +38,25 @@ class ChatMessage(SQLModel, table=True):
 
 class Item(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    character_id: uuid.UUID = Field(foreign_key="character.id")
+    universe_id: uuid.UUID = Field(foreign_key="universe.id")
     name: str
-    item_type: str
-    damage_dice: Optional[str] = Field(default=None)
-    quantity: int = Field(default=1)
+    description: str = Field(default="")
+    item_type: ItemType
+    attributes: Dict[str, Any] = Field(default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
 
-    character: Optional["Character"] = Relationship(back_populates="items")
+    universe: Optional["Universe"] = Relationship(back_populates="items")
+    inventory_slots: List["InventorySlot"] = Relationship(back_populates="item")
+
+class InventorySlot(SQLModel, table=True):
+    __tablename__ = "inventory_slot"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    character_id: uuid.UUID = Field(foreign_key="character.id")
+    item_id: uuid.UUID = Field(foreign_key="item.id")
+    quantity: int = Field(default=1)
+    is_equipped: bool = Field(default=False)
+
+    character: Optional["Character"] = Relationship(back_populates="inventory")
+    item: Optional[Item] = Relationship(back_populates="inventory_slots")
 
 class Character(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -65,7 +84,7 @@ class Character(SQLModel, table=True):
     spell_slots: str = Field(default="{}")
     class_resources: str = Field(default="{}")
 
-    items: List[Item] = Relationship(back_populates="character")
+    inventory: List[InventorySlot] = Relationship(back_populates="character")
     universe: Optional["Universe"] = Relationship(back_populates="characters")
     user: Optional[User] = Relationship(back_populates="characters")
     game_sessions: List["GameSession"] = Relationship(back_populates="participants", link_model=SessionParticipants)
@@ -116,6 +135,7 @@ class Universe(SQLModel, table=True):
     locations: List[WorldLocationTable] = Relationship(back_populates="universe")
     factions: List[WorldFactionTable] = Relationship(back_populates="universe")
     sessions: List["GameSession"] = Relationship(back_populates="universe")
+    items: List[Item] = Relationship(back_populates="universe")
 
 class GameSession(SQLModel, table=True):
     __tablename__ = "game_session"
