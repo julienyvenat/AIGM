@@ -393,16 +393,159 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             # 1. Parsing du JSON
             try:
                 payload = json.loads(data)
-                player_text = payload.get("text")
-                if not player_text:
-                    raise ValueError("Le champ 'text' est manquant.")
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"Message invalide de {player_id}: {e}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Message JSON invalide de {player_id}: {e}")
                 await manager.send_personal_message(
-                    {"type": "error", "message": "Format de message invalide. Attendu: {'text': '...'}"},
+                    {"type": "error", "message": "Format JSON invalide."},
                     websocket
                 )
-                continue # On ignore ce message et on attend le prochain
+                continue
+
+
+            # Check for UI Actions bypassing the LLM
+            if payload.get("type") == "UI_ACTION":
+                action = payload.get("action")
+                item_id_str = payload.get("item_id")
+
+                if action and item_id_str:
+                    import uuid
+                    from src.engine.models import InventorySlot, Item
+                    from src.engine.tools import roll_dice
+
+                    async for session in get_session():
+                        try:
+                            # Verify character
+                            stmt_char = select(Character).where(Character.id == uuid.UUID(character_id))
+                            res_char = await session.execute(stmt_char)
+                            char = res_char.scalars().first()
+
+                            if char:
+                                # Find inventory slot
+                                stmt_slot = select(InventorySlot).where(
+                                    InventorySlot.id == uuid.UUID(item_id_str),
+                                    InventorySlot.character_id == char.id
+                                )
+                                res_slot = await session.execute(stmt_slot)
+                                slot = res_slot.scalars().first()
+
+                                if slot:
+                                    # Fetch item details
+                                    stmt_item = select(Item).where(Item.id == slot.item_id)
+                                    res_item = await session.execute(stmt_item)
+                                    item = res_item.scalars().first()
+
+                                    system_message = ""
+                                    needs_stats_update = False
+
+                                    if action == "equip":
+                                        if item.item_type in ["WEAPON", "ARMOR"]:
+                                            slot.is_equipped = not slot.is_equipped
+                                            session.add(slot)
+                                            state = "équiper" if slot.is_equipped else "déséquiper"
+                                            system_message = f"{char.name} vient de {state} : {item.name}."
+                                            needs_stats_update = True
+
+                                    elif action == "use":
+                                        if item.item_type == "CONSUMABLE" and slot.quantity > 0:
+                                            slot.quantity -= 1
+                                            effect_msg = ""
+                                            if item.attributes and "healing" in item.attributes:
+                                                healing_roll = roll_dice(item.attributes["healing"])
+                                                old_hp = char.hp
+                                                char.hp = min(char.max_hp, char.hp + healing_roll)
+                                                healed = char.hp - old_hp
+                                                effect_msg = f" et regagne {healed} PV"
+                                                session.add(char)
+
+                                            if slot.quantity <= 0:
+                                                await session.delete(slot)
+                                            else:
+                                                session.add(slot)
+
+                                            system_message = f"{char.name} utilise {item.name}{effect_msg}."
+                                            needs_stats_update = True
+
+                                    if needs_stats_update:
+                                        await session.commit()
+
+                                        # Broadcast system message
+                                        await manager.broadcast_to_session({
+                                            "type": "system",
+                                            "category": "SYSTEM",
+                                            "message": system_message
+                                        }, session_id)
+
+                                        # Refresh and send STATS_UPDATE
+                                        await session.refresh(char)
+                                        from sqlalchemy.orm import selectinload
+                                        st_refresh = select(Character).options(selectinload(Character.inventory).selectinload(InventorySlot.item)).where(Character.id == char.id)
+                                        res_refresh = await session.execute(st_refresh)
+                                        char_refreshed = res_refresh.scalars().first()
+
+                                        known_spells_parsed = []
+                                        spell_slots_parsed = {}
+                                        class_resources_parsed = {}
+                                        try:
+                                            known_spells_parsed = json.loads(char_refreshed.known_spells)
+                                            spell_slots_parsed = json.loads(char_refreshed.spell_slots)
+                                            class_resources_parsed = json.loads(char_refreshed.class_resources)
+                                        except Exception:
+                                            pass
+
+                                        inv_list = []
+                                        if char_refreshed and char_refreshed.inventory:
+                                            for s in char_refreshed.inventory:
+                                                inv_list.append({
+                                                    "id": str(s.id),
+                                                    "quantity": s.quantity,
+                                                    "is_equipped": s.is_equipped,
+                                                    "item": {
+                                                        "id": str(s.item.id),
+                                                        "name": s.item.name,
+                                                        "description": s.item.description,
+                                                        "item_type": s.item.item_type.value,
+                                                        "attributes": s.item.attributes
+                                                    }
+                                                })
+
+                                        await manager.send_personal_message({
+                                            "type": "stats_update",
+                                            "character": {
+                                                "id": str(char_refreshed.id),
+                                                "name": char_refreshed.name,
+                                                "hp": char_refreshed.hp,
+                                                "max_hp": char_refreshed.max_hp,
+                                                "armor_class": char_refreshed.armor_class,
+                                                "speed": char_refreshed.speed,
+                                                "reference_portrait_url": char_refreshed.reference_portrait_url,
+                                                "strength": char_refreshed.strength,
+                                                "dexterity": char_refreshed.dexterity,
+                                                "constitution": char_refreshed.constitution,
+                                                "intelligence": char_refreshed.intelligence,
+                                                "wisdom": char_refreshed.wisdom,
+                                                "charisma": char_refreshed.charisma,
+                                                "level": char_refreshed.level,
+                                                "experience": char_refreshed.experience,
+                                                "known_spells": known_spells_parsed,
+                                                "spell_slots": spell_slots_parsed,
+                                                "class_resources": class_resources_parsed,
+                                                "inventory": inv_list
+                                            }
+                                        }, websocket)
+
+                        except Exception as e:
+                            logger.error(f"Error processing UI_ACTION: {e}")
+                        break
+                continue
+
+            player_text = payload.get("text")
+            if not player_text:
+                await manager.send_personal_message(
+                    {"type": "error", "message": "Le champ 'text' est manquant ou vide."},
+                    websocket
+                )
+                continue
+
 
             # Sanitize player_id and player_text to prevent log injection
             sanitized_player_id = str(character_id).replace('\n', '\\n').replace('\r', '\\r')
