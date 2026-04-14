@@ -234,6 +234,27 @@ async def dispatch_tool_call(session: AsyncSession, tool_name: str, args: dict) 
 
 async def generate_narrator_response(session: AsyncSession, player_id: str, text: str, context: str = "", game_mode: str = "NARRATIVE") -> str:
     system_instruction = NARRATOR_SYSTEM_PROMPT if game_mode != "BATTLE" else TACTICAL_SYSTEM_PROMPT
+    # Inject Inventory into context
+    import uuid
+    from sqlmodel import select
+    from sqlalchemy.orm import selectinload
+    from src.engine.models import Character, InventorySlot
+
+    st_inv = select(Character).options(selectinload(Character.inventory).selectinload(InventorySlot.item)).where(Character.id == uuid.UUID(player_id))
+    res_inv = await session.execute(st_inv)
+    char_inv = res_inv.scalars().first()
+
+    if char_inv and char_inv.inventory:
+        inv_str = "[SYSTEM_KNOWLEDGE - PLAYER INVENTORY] : Le joueur possede actuellement : "
+        items = []
+        for slot in char_inv.inventory:
+            eq_str = ", Equipe" if slot.is_equipped else ""
+            items.append(f"{slot.quantity}x {slot.item.name} ({slot.item.item_type.value}{eq_str})")
+        inv_str += ", ".join(items) + ". Le joueur NE PEUT PAS utiliser ou equiper d'objets qui ne sont pas dans cette liste."
+        context = f"{context}\n\n{inv_str}" if context else inv_str
+        import logging
+        logging.info(f"DEBUG INJECTED INVENTORY: {inv_str}")
+
 
     # Append combat state to context if in battle
     if game_mode == "BATTLE":

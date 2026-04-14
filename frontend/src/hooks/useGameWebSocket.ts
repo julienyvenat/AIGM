@@ -178,9 +178,20 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
     }
   }, []);
 
+
+  const sendAction = useCallback((action: string, itemId: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'UI_ACTION',
+        action,
+        item_id: itemId
+      }));
+    }
+  }, []);
+
   const clearSceneImage = useCallback(() => {
     setCurrentSceneImage(null);
   }, []);
 
-  return { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage, battlemapImageUrl };
+  return { isConnected, messages, sendMessage, sendAction, entities, currentSceneImage, clearSceneImage, battlemapImageUrl };
 }

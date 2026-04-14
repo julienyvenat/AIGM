@@ -28,6 +28,7 @@ export interface Character {
   known_spells: Record<string, unknown>[];
   spell_slots: Record<string, unknown>;
   class_resources: Record<string, unknown>;
+  inventory: Record<string, unknown>[];
 }
 
 export function Play() {
@@ -45,7 +46,7 @@ export function Play() {
     setCharacter(prev => prev ? { ...prev, ...updatedCharacter } as Character : updatedCharacter as Character);
   }, []);
 
-  const { isConnected, messages, sendMessage, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
+  const { isConnected, messages, sendMessage, sendAction, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
 
   useEffect(() => {
     if (!sessionId || !characterId || !token) {
@@ -152,7 +153,7 @@ export function Play() {
 
       {/* Modals */}
       {isCharacterModalOpen && character && (
-         <CharacterModal character={character} onClose={() => setIsCharacterModalOpen(false)} />
+         <CharacterModal character={character} onClose={() => setIsCharacterModalOpen(false)} sendAction={sendAction} />
       )}
 
       {showCharacterManager && character && (

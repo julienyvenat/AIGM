@@ -3,9 +3,10 @@ import type { Character } from '../pages/Play';
 interface CharacterModalProps {
   character: Character;
   onClose: () => void;
+  sendAction?: (action: string, itemId: string) => void;
 }
 
-export function CharacterModal({ character, onClose }: CharacterModalProps) {
+export function CharacterModal({ character, onClose, sendAction }: CharacterModalProps) {
 
   const getModifier = (score: number) => {
     const mod = Math.floor((score - 10) / 2);
@@ -134,6 +135,52 @@ export function CharacterModal({ character, onClose }: CharacterModalProps) {
                         </li>
                        )
                     })}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {/* Inventory List */}
+            <div className="bg-gray-900/50 border border-gray-700 rounded-lg flex flex-col h-full mt-6">
+              <div className="bg-gray-800/80 p-3 border-b border-gray-700 rounded-t-lg">
+                <h3 className="font-serif font-bold text-lg text-amber-500 flex items-center gap-2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 16V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12"/>
+                    <rect x="2" y="16" width="20" height="6" rx="2"/>
+                  </svg>
+                  Inventaire
+                </h3>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto">
+                {(!character.inventory || character.inventory.length === 0) ? (
+                  <div className="h-full flex items-center justify-center text-gray-500 italic">
+                    Inventaire vide.
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {character.inventory.map((slot: { id: string; quantity: number; is_equipped: boolean; item?: { name: string; description: string; item_type: string; attributes: Record<string, unknown> } }) => (
+                        <li key={slot.id} className="bg-gray-800/50 p-3 rounded border border-gray-700/50 hover:border-gray-600 transition-colors flex justify-between items-center">
+                          <div>
+                              <h4 className="font-bold text-amber-400">
+                                {slot.quantity}x {slot.item?.name}
+                                {slot.is_equipped && <span className="ml-2 text-xs bg-amber-900/50 text-amber-500 border border-amber-700/50 px-2 py-0.5 rounded-full">Équipé</span>}
+                              </h4>
+                              {slot.item?.description && <p className="text-sm text-gray-400 mt-1">{slot.item.description}</p>}
+                          </div>
+                          <div>
+                              {['WEAPON', 'ARMOR'].includes(slot.item?.item_type) && sendAction && (
+                                  <button onClick={() => sendAction('equip', slot.id)} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition">
+                                      {slot.is_equipped ? 'Déséquiper' : 'Équiper'}
+                                  </button>
+                              )}
+                              {slot.item?.item_type === 'CONSUMABLE' && sendAction && (
+                                  <button onClick={() => sendAction('use', slot.id)} className="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition">
+                                      Utiliser
+                                  </button>
+                              )}
+                          </div>
+                        </li>
+                    ))}
                   </ul>
                 )}
               </div>
