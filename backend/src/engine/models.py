@@ -16,6 +16,17 @@ class ItemType(str, Enum):
     CONSUMABLE = "CONSUMABLE"
     MISC = "MISC"
 
+
+class GameSystem(SQLModel, table=True):
+    __tablename__ = "game_system"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str
+    rules_summary: str
+    dice_system: str
+
+    universes: List["Universe"] = Relationship(back_populates="game_system")
+
 class User(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     username: str = Field(unique=True, index=True)
@@ -126,6 +137,7 @@ class WorldFactionTable(SQLModel, table=True):
 
 class Universe(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    game_system_id: Optional[uuid.UUID] = Field(default=None, foreign_key="game_system.id")
     name: str
     description: str
     image_url: Optional[str] = Field(default=None)
@@ -136,6 +148,7 @@ class Universe(SQLModel, table=True):
     factions: List[WorldFactionTable] = Relationship(back_populates="universe")
     sessions: List["GameSession"] = Relationship(back_populates="universe")
     items: List[Item] = Relationship(back_populates="universe")
+    game_system: Optional[GameSystem] = Relationship(back_populates="universes")
 
 class GameSession(SQLModel, table=True):
     __tablename__ = "game_session"

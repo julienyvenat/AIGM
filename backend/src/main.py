@@ -24,7 +24,7 @@ from src.agents.scene_editor import analyze_scene, ImageDecision
 from src.agents.image_prompter import generate_image_prompt
 from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
-from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants
+from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
 from src.auth.deps import get_current_user
 
 
@@ -679,8 +679,17 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         char = result.scalars().first()
 
                         if char:
+                            # Fetch the universe and its game_system
+                            uni = await session.get(Universe, char.universe_id)
+                            if not uni or not uni.game_system_id:
+                                # Fallback to default
+                                gs_result = await session.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
+                                game_system = gs_result.scalars().first()
+                            else:
+                                game_system = await session.get(GameSystem, uni.game_system_id)
+
                             # Run arbitration
-                            arbitration_res = await arbitrate_action(char, player_text)
+                            arbitration_res = await arbitrate_action(char, game_system, player_text)
 
                             # Deduct resource if consumed
                             needs_update = False

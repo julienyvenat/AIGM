@@ -45,3 +45,8 @@ Le backend utilise le standard MCP. L'architecture est la suivante :
 * **Broadcasting :** Les messages de chat, les changements de `game_mode` et les `STATS_UPDATE` doivent être diffusés à TOUS les participants d'une `GameSession` via le `ConnectionManager`.
 * **Persistence de Session :** L'état du combat (X,Y, HP des monstres) doit être sauvé en base de données régulièrement pour permettre la reprise de partie fluide.
 
+
+## 8. Systèmes de Jeu et Règles
+* **Hiérarchie :** Un `GameSystem` définit les règles mécaniques. Un `Universe` est rattaché à un `GameSystem`.
+* **Contexte de l'Arbitre :** L'IA Arbitre doit toujours recevoir les spécificités du `GameSystem` (système de dés, calculs de réussite) pour éviter d'inventer des règles incohérentes.
+* **Items :** Les items peuvent être globaux à un système ou spécifiques à un univers.

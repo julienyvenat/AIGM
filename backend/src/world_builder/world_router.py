@@ -6,7 +6,7 @@ from pydantic import BaseModel
 import uuid
 
 from src.engine.database import get_session
-from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character
+from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character, GameSystem
 from src.agents.universe_architect import generate_universe_from_prompt
 from src.memory.vector_db import add_to_memory
 
@@ -14,11 +14,29 @@ router = APIRouter()
 
 class UniverseGenerateRequest(BaseModel):
     prompt: str
+    game_system_id: uuid.UUID | None = None
 
 @router.post("/world/generate-from-prompt")
 async def generate_universe(req: UniverseGenerateRequest, db: AsyncSession = Depends(get_session)):
+    # Fetch or default GameSystem
+    if req.game_system_id:
+        game_system = await db.get(GameSystem, req.game_system_id)
+        if not game_system:
+            raise HTTPException(status_code=404, detail="GameSystem not found")
+    else:
+        result = await db.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
+        game_system = result.scalars().first()
+        if not game_system:
+            raise HTTPException(status_code=500, detail="Default GameSystem 'SRD 5e Light' not found. Run the seed script.")
+
     # Create the universe and its entities
-    universe, world_knowledge = await generate_universe_from_prompt(req.prompt, db)
+    universe, world_knowledge = await generate_universe_from_prompt(req.prompt, game_system, db)
+
+    # Assign the GameSystem to the newly created Universe
+    universe.game_system_id = game_system.id
+    db.add(universe)
+    await db.commit()
+    await db.refresh(universe)
 
     # Save the global lore to ChromaDB with universe_id metadata
     await add_to_memory(

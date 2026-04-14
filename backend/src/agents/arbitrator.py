@@ -8,7 +8,7 @@ from openai import OpenAI
 from google import genai
 from google.genai import types
 
-from src.engine.models import Character
+from src.engine.models import Character, GameSystem
 
 class ArbitratorLLMOutput(BaseModel):
     action_type: str = Field(description="Type of action (attack, spell, dodge, skill_check, etc.)")
@@ -37,11 +37,16 @@ gemini_client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY")) if os.env
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-pro")
 
-async def arbitrate_action(character: Character, intent_text: str) -> ArbitratorResult:
+async def arbitrate_action(character: Character, game_system: GameSystem, intent_text: str) -> ArbitratorResult:
     """
     Use an LLM to determine the stat and difficulty, then securely roll the dice in Python.
     """
-    system_prompt = f"""Tu es un arbitre strict de D&D 5e. Utilise tes connaissances internes du SRD officiel pour connaître les effets, les dégâts, les jets de sauvegarde et les portées des sorts et capacités. Tu ne peux valider l'action d'un joueur que s'il possède le sort dans sa liste et s'il lui reste des emplacements de sorts appropriés.
+    system_prompt = f"""Tu es l'arbitre du système "{game_system.name}".
+
+Voici le résumé des règles du système :
+{game_system.rules_summary}
+
+Utilise ces règles (incluant le système de dés : {game_system.dice_system}) pour connaître les effets, les dégâts, les jets de sauvegarde et les portées des sorts et capacités. Tu ne peux valider l'action d'un joueur que s'il possède le sort dans sa liste et s'il lui reste des emplacements de sorts appropriés.
 
 Le joueur tente l'action suivante : "{intent_text}"
 Les stats du personnage sont :
