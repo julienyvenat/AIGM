@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 from src.memory.vector_db import add_to_memory
 from src.engine.database import init_db, get_session
-from src.engine.models import Character, Item, Universe
+from src.engine.models import Character, Item, Universe, GameSystem
 
 async def main():
     logger.info("Starting seed script...")
@@ -38,9 +38,33 @@ async def main():
     # 3. Fill the SQL Database (Characters and Items)
     logger.info("Injecting SQL Entities (Characters and Items)...")
 
+    SRD_RULES = """# SRD 5e Light - Résumé des Règles
+**Mécanique de Résolution :**
+- Toute action incertaine se résout par le jet d'un d20 auquel on ajoute le modificateur de la caractéristique appropriée (Force, Dextérité, Constitution, Intelligence, Sagesse, Charisme).
+- Formule du modificateur : (Valeur de Caractéristique - 10) divisé par 2 (arrondi à l'inférieur).
+- Le résultat total (d20 + modificateur) doit égaler ou dépasser le Degré de Difficulté (DD) fixé par le MJ, ou la Classe d'Armure (CA) de la cible en cas d'attaque.
+
+**Avantage et Désavantage :**
+- **Avantage :** Lancer deux d20 et garder le résultat le plus élevé.
+- **Désavantage :** Lancer deux d20 et garder le résultat le plus bas.
+
+**Combat et Santé :**
+- La **CA (Classe d'Armure)** représente la difficulté à toucher physiquement un personnage.
+- Les **PV (Points de Vie)** représentent la capacité d'encaissement. À 0 PV, un personnage est inconscient.
+- **Dommages :** Les attaques réussies déduisent un montant variable de PV en fonction de l'arme ou du sort utilisé."""
+
+    srd_system = GameSystem(
+        id=uuid.uuid4(),
+        name="SRD 5e Light",
+        description="Système de jeu de rôle fantastique basé sur le d20. Inclut les mécaniques fondamentales du System Reference Document 5e.",
+        rules_summary=SRD_RULES,
+        dice_system="d20"
+    )
+
     uni_id = uuid.uuid4()
-    uni = Universe(id=uni_id, name="Test Universe", description="A test")
+    uni = Universe(id=uni_id, game_system_id=srd_system.id, name="Test Universe", description="A test")
     async for session in get_session():
+        session.add(srd_system)
         session.add(uni)
         await session.commit()
         break

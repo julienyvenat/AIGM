@@ -8,16 +8,20 @@ from openai import AsyncOpenAI
 
 from src.world_builder.schemas import WorldKnowledge
 from src.engine.image_generator import generate_scene_image
-from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable
+from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, GameSystem
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-async def generate_universe_from_prompt(prompt: str, db: AsyncSession) -> Universe:
+async def generate_universe_from_prompt(prompt: str, game_system: GameSystem, db: AsyncSession) -> Universe:
     logging.info(f"Generating universe from prompt: {prompt}")
 
     # 1. Generate WorldKnowledge using structured outputs
-    system_prompt = """
+    system_prompt = f"""
 Tu es l'Architecte de l'Univers, un maître conteur et créateur de mondes.
+Le monde doit respecter les contraintes du système de jeu suivant : {game_system.name}.
+Résumé des règles et contraintes : {game_system.rules_summary}.
+(Assure-toi que la magie, la technologie et les entités soient cohérentes avec ce système de jeu).
+
 À partir de la description ou de la phrase fournie par l'utilisateur, crée un monde riche et cohérent.
 Extrais les PNJ (nom, faction, description), les lieux (nom, description, points d'intérêt), et les factions (nom, description, relations politiques).
 Génère une histoire globale captivante qui servira de contexte général au monde.
