@@ -2,23 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { apiFetch } from '../utils/api';
+import type {  Universe, GameSession, Character  } from '../types';
 
-interface Universe {
-  id: string;
-  name: string;
-}
-
-interface Character {
-  id: number;
-  name: string;
-  game_session_id?: number | null;
-}
-
-interface GameSession {
-  id: number;
-  universe_id: number;
-  status: string;
-}
 
 export const Dashboard = () => {
   const { token, user, logout } = useAuth();
@@ -222,8 +207,17 @@ export const Dashboard = () => {
             <ul className="space-y-4">
               {sessions.map((session: GameSession) => (
                  <li key={session.id} className="bg-gray-700 p-4 rounded-md">
-                    <h3 className="font-bold text-white">Session #{session.id}</h3>
-                    <p className="text-sm text-gray-400">Univers: {session.universe_id}</p>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-bold text-white">Session #{session.id}</h3>
+                        <p className="text-sm text-gray-400">Univers: {session.universe?.name || session.universe_id}</p>
+                      </div>
+                      {session.universe?.game_system && (
+                        <span className="bg-emerald-900/50 border border-emerald-500 text-emerald-300 text-xs px-2 py-1 rounded-full whitespace-nowrap">
+                          Système : {session.universe.game_system.name}
+                        </span>
+                      )}
+                    </div>
                  </li>
               ))}
             </ul>

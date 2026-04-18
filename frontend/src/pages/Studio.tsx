@@ -1,5 +1,8 @@
 import { apiFetch } from "../utils/api";
 import { useState, useEffect } from 'react';
+import type { GameSystem } from '../types';
+
+
 
 export function Studio() {
   const [prompt, setPrompt] = useState('');
@@ -10,9 +13,23 @@ export function Studio() {
   const [npcs, setNpcs] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [locations, setLocations] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const [factions, setFactions] = useState<any[]>([]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [gameSystems, setGameSystems] = useState<GameSystem[]>([]);
+  const [selectedSystemId, setSelectedSystemId] = useState<string>('');
 
   // Modal states
   const [editModal, setEditModal] = useState<{type: 'npc'|'faction', data: any} | null>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+
+  const fetchGameSystems = async () => {
+    try {
+      const res = await apiFetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/game-systems`);
+      const data = await res.json();
+      setGameSystems(data);
+      if (data.length > 0 && !selectedSystemId) {
+        setSelectedSystemId(data[0].id);
+      }
+    } catch (e) { console.error(e); }
+  };
 
   const fetchUniverses = async () => {
     try {
@@ -40,6 +57,7 @@ export function Studio() {
   };
 
   useEffect(() => {
+    fetchGameSystems();
     fetchUniverses();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -56,10 +74,11 @@ export function Studio() {
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/world/generate-from-prompt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt, game_system_id: selectedSystemId })
       });
       const data = await res.json();
-      await fetchUniverses();
+      await fetchGameSystems();
+    fetchUniverses();
       setSelectedUniverseId(data.universe.id);
       setPrompt('');
     } catch (e) {
@@ -92,9 +111,31 @@ export function Studio() {
 
   return (
     <div className="h-full flex flex-col p-6 overflow-y-auto">
+
       <div className="mb-8 p-6 bg-gray-800 rounded-xl border border-emerald-500/30">
         <h2 className="text-2xl font-bold mb-4 text-emerald-400">Générateur d'Univers</h2>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-400 mb-1">Système de jeu</label>
+          <select
+            value={selectedSystemId}
+            onChange={(e) => setSelectedSystemId(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+            disabled={generating}
+          >
+            {gameSystems.map(gs => (
+              <option key={gs.id} value={gs.id}>{gs.name}</option>
+            ))}
+          </select>
+          {selectedSystemId && gameSystems.find(gs => gs.id === selectedSystemId)?.description && (
+            <p className="mt-2 text-sm text-gray-400 italic">
+              {gameSystems.find(gs => gs.id === selectedSystemId)?.description}
+            </p>
+          )}
+        </div>
+
         <div className="flex gap-4">
+
           <input
             type="text"
             value={prompt}
