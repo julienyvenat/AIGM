@@ -1,4 +1,4 @@
-import type { Character } from '../pages/Play';
+import type { Character } from '../types';
 
 interface CharacterModalProps {
   character: Character;
@@ -168,7 +168,7 @@ export function CharacterModal({ character, onClose, sendAction }: CharacterModa
                               {slot.item?.description && <p className="text-sm text-gray-400 mt-1">{slot.item.description}</p>}
                           </div>
                           <div>
-                              {['WEAPON', 'ARMOR'].includes(slot.item?.item_type) && sendAction && (
+                              {['WEAPON', 'ARMOR'].includes(slot.item?.item_type as string) && sendAction && (
                                   <button onClick={() => sendAction('equip', slot.id)} className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded transition">
                                       {slot.is_equipped ? 'Déséquiper' : 'Équiper'}
                                   </button>

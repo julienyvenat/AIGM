@@ -1,8 +1,8 @@
 import asyncio
 from sqlmodel import select, SQLModel
-from engine.models import Character, WorldNPCTable, Universe
-from engine.database import get_session, engine
-from agents.narrator import get_combat_state
+from src.engine.models import Character, WorldNPCTable, Universe
+from src.engine.database import get_session, engine
+from src.agents.narrator import get_combat_state
 
 async def init_db():
     async with engine.begin() as conn:
@@ -17,7 +17,7 @@ async def test_battlemap_models():
         await session.commit()
         await session.refresh(u)
 
-        char = Character(name="Hero", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=u.id)
+        char = Character(name="Hero", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=u.id, user_id=u.id) # fake user id
         session.add(char)
         await session.commit()
         await session.refresh(char)
@@ -44,7 +44,7 @@ async def test_get_combat_state():
         await session.commit()
         await session.refresh(u)
 
-        char = Character(name="Hero2", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=u.id, x=5, y=5)
+        char = Character(name="Hero2", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=u.id, user_id=u.id, x=5, y=5)
         npc = WorldNPCTable(nom="Goblin2", description="evil", universe_id=u.id, x=10, y=10, is_in_combat=True)
         session.add(char)
         session.add(npc)

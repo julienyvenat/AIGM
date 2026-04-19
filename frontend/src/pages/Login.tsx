@@ -46,11 +46,11 @@ export const Login = () => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">
               Nom d'utilisateur
             </label>
             <input
-              type="text"
+              id="username" type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -59,11 +59,11 @@ export const Login = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
               Mot de passe
             </label>
             <input
-              type="password"
+              id="password" type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"

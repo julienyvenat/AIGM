@@ -1,21 +1,5 @@
-@import "tailwindcss";
-@plugin "@tailwindcss/typography";
-
-@theme {
-  --color-dark-bg: #121212;
-  --color-dark-panel: #1e1e1e;
-  --color-dark-text: #e0e0e0;
-}
-
-body {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  background-color: var(--color-dark-bg);
-  color: var(--color-dark-text);
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-}
-
+with open("frontend/src/index.css", "a") as f:
+    f.write("""
 /* Tailwind Typography (prose) plugin is missing, so adding basic markdown styles manually for Rulebook */
 .prose {
   color: #d1d5db;
@@ -53,3 +37,4 @@ body {
   font-style: italic;
   margin-bottom: 1em;
 }
+""")

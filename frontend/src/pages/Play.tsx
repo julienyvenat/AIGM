@@ -7,29 +7,11 @@ import { SceneViewer } from '../components/SceneViewer';
 import { CharacterManager } from '../components/CharacterManager';
 import { CharacterSidePanel } from '../components/CharacterSidePanel';
 import { CharacterModal } from '../components/CharacterModal';
+import { RulebookModal } from '../components/RulebookModal';
+import type { GameSession } from '../types';
 import { useAuth } from '../hooks/useAuth';
+import type { Character } from '../types';
 
-export interface Character {
-  id: string;
-  name: string;
-  hp: number;
-  max_hp: number;
-  armor_class: number;
-  speed: number;
-  reference_portrait_url: string | null;
-  strength: number;
-  dexterity: number;
-  constitution: number;
-  intelligence: number;
-  wisdom: number;
-  charisma: number;
-  level: number;
-  experience: number;
-  known_spells: Record<string, unknown>[];
-  spell_slots: Record<string, unknown>;
-  class_resources: Record<string, unknown>;
-  inventory: Record<string, unknown>[];
-}
 
 export function Play() {
   const { sessionId, characterId } = useParams<{ sessionId: string, characterId: string }>();
@@ -38,6 +20,8 @@ export function Play() {
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [showCharacterManager, setShowCharacterManager] = useState(false);
+  const [showRulebook, setShowRulebook] = useState(false);
+  const [sessionContext, setSessionContext] = useState<GameSession | null>(null);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(characterId || null);
   const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -71,6 +55,19 @@ export function Play() {
 
         setCharacter(charData);
 
+      // Fetch Session Context for Rulebook
+      try {
+        const sessionRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/sessions/${sessionId}/context`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (sessionRes.ok) {
+          setSessionContext(await sessionRes.json());
+        }
+      } catch (e) {
+        console.error("Failed to fetch session context", e);
+      }
+
+
         if (!charData.reference_portrait_url) {
           setShowCharacterManager(true);
         } else {
@@ -101,7 +98,18 @@ export function Play() {
       {/* Mini-header for character stats */}
       {character && (
         <div className="bg-gray-800/80 border-b border-gray-700 p-2 flex justify-between items-center z-10 shrink-0">
+
            <div className="flex items-center gap-2">
+             {sessionContext?.universe?.game_system && (
+               <button
+                 onClick={() => setShowRulebook(true)}
+                 className="p-1.5 bg-emerald-900/50 hover:bg-emerald-800 border border-emerald-500/50 rounded text-emerald-400 transition-colors mr-2"
+                 title="Livre de règles"
+               >
+                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+               </button>
+             )}
+
              <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
              <span className="text-xs text-gray-400">{isConnected ? 'En ligne' : 'Déconnecté'}</span>
            </div>
@@ -162,6 +170,14 @@ export function Play() {
           onComplete={handleCharacterManagerComplete}
         />
       )}
+
+      {showRulebook && sessionContext?.universe?.game_system && (
+        <RulebookModal
+          system={sessionContext.universe.game_system}
+          onClose={() => setShowRulebook(false)}
+        />
+      )}
     </div>
+
   );
 }

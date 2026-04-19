@@ -1,19 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
+import type {  Universe, Character  } from '../types';
 
-interface Character {
-  id: string;
-  name: string;
-  universe_id: string;
-}
-
-interface Universe {
-  id: string;
-  name: string;
-  description: string;
-  image_url: string | null;
-}
 
 export function Home() {
   const [universes, setUniverses] = useState<Universe[]>([]);

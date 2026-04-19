@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { Character } from '../pages/Play';
+import type { Character } from '../types';
 
 interface CharacterManagerProps {
   character: Character;

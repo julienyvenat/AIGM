@@ -165,11 +165,31 @@ async def get_sessions(current_user: User = Depends(get_current_user), db: Async
     from sqlalchemy.orm import selectinload
 
     # Simple approach for dashboard: just return all sessions the user hosts
-    result = await db.execute(select(GameSession).where(GameSession.host_id == current_user.id))
+    result = await db.execute(select(GameSession).where(GameSession.host_id == current_user.id).options(selectinload(GameSession.universe).selectinload(Universe.game_system)))
     return result.scalars().all()
 
 class JoinSessionRequest(BaseModel):
     character_id: str
+
+
+@app.get("/sessions/{session_id}/context")
+async def get_session_context(session_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    import uuid
+    from sqlmodel import select
+    from sqlalchemy.orm import selectinload
+
+    try:
+        s_id = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+    result = await db.execute(select(GameSession).where(GameSession.id == s_id).options(selectinload(GameSession.universe).selectinload(Universe.game_system)))
+    session = result.scalars().first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return session
 
 @app.post("/sessions/{session_id}/join")
 async def join_session(session_id: str, join_req: JoinSessionRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):

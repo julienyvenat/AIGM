@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload
 from typing import List
 from pydantic import BaseModel
 import uuid
@@ -71,9 +73,15 @@ async def generate_universe(req: UniverseGenerateRequest, db: AsyncSession = Dep
 
     return {"status": "success", "universe": universe}
 
+
+@router.get("/game-systems", response_model=List[GameSystem])
+async def get_game_systems(db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(GameSystem))
+    return result.scalars().all()
+
 @router.get("/universes", response_model=List[Universe])
 async def get_universes(db: AsyncSession = Depends(get_session)):
-    result = await db.execute(select(Universe))
+    result = await db.execute(select(Universe).options(selectinload(Universe.game_system)))
     return result.scalars().all()
 
 @router.get("/universes/{universe_id}", response_model=Universe)
