@@ -51,3 +51,10 @@ Avant de crier victoire, jette un œil rapide à ces deux points :
 * **Dossier Images :** Vérifie dans ton dossier `backend/images`. Tu devrais y voir le fichier `.png` de ton personnage ou de tes scènes.
 * **Console Network :** Vérifiez sur le navigateur que vos appels partent bien avec le Header `Authorization: Bearer <votre_token>`.
 * **Tests unitaires de sécurité :** Exécutez `export PYTHONPATH=backend && pytest backend/test_integration.py` pour valider que le backend repousse correctement (code HTTP 403) un utilisateur essayant de se connecter avec le personnage d'un autre joueur.
+
+## Modèles de données
+
+Le système utilise désormais une approche agnostique pour la gestion des statistiques et des attributs de jeu.
+* `GameSystem` : Définit les systèmes de règles avec des prompts de règles intégrés (`core_rules_prompt`) et la structure attendue des personnages (`character_schema`).
+* `Character` : Les statistiques spécifiques (Force, Intelligence, etc.) ont été remplacées par un champ JSON flexible (`stats`), permettant de s'adapter dynamiquement au schéma défini par le système de jeu de l'univers.
+* `Item` : Les propriétés variables comme les dégâts, le poids ou la rareté sont stockées dans un champ JSON `attributes` pour s'adapter à n'importe quel système.
