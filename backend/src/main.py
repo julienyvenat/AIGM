@@ -25,6 +25,7 @@ from src.agents.image_prompter import generate_image_prompt
 from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
 from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
+from src.engine.services.character_service import validate_character_stats, SchemaValidationError
 from src.auth.deps import get_current_user
 
 
@@ -96,6 +97,7 @@ class CharacterCreate(BaseModel):
     name: str
     universe_id: str
     description: str | None = None
+    stats: dict = {}
 
 @app.post("/characters/")
 async def create_character(char_data: CharacterCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
@@ -105,6 +107,28 @@ async def create_character(char_data: CharacterCreate, current_user: User = Depe
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid universe_id format")
 
+
+    # Find the universe and game system to validate stats
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlmodel import select
+    from src.engine.models import Universe, GameSystem
+    from src.engine.services.character_service import validate_character_stats, SchemaValidationError
+
+    universe = await db.get(Universe, universe_id)
+    if not universe:
+        raise HTTPException(status_code=400, detail="Universe not found")
+
+    game_system = await db.get(GameSystem, universe.game_system_id)
+    if not game_system:
+        raise HTTPException(status_code=400, detail="GameSystem not found")
+
+    # Validate character stats against game system schema
+    if hasattr(char_data, 'stats'):
+        try:
+            validate_character_stats(char_data.stats, game_system.character_schema)
+        except SchemaValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     char = Character(
         name=char_data.name,
         universe_id=universe_id,
@@ -113,7 +137,8 @@ async def create_character(char_data: CharacterCreate, current_user: User = Depe
         hp=10,
         max_hp=10,
         armor_class=10,
-        speed=30
+        speed=30,
+        stats=char_data.stats
     )
     db.add(char)
     await db.commit()
