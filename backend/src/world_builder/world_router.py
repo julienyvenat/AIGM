@@ -8,7 +8,7 @@ import uuid
 from src.engine.database import get_session
 from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character, GameSystem
 from src.agents.universe_architect import generate_universe_from_prompt
-from src.memory.vector_db import add_to_memory
+from src.memory.vector_db import add_to_memory, add_batch_to_memory
 
 router = APIRouter()
 
@@ -46,27 +46,33 @@ async def generate_universe(req: UniverseGenerateRequest, db: AsyncSession = Dep
     )
 
     # Save NPCs to ChromaDB
-    for npc in world_knowledge.npc:
-        await add_to_memory(
-            text=f"{npc.nom} ({npc.faction or 'Sans faction'}): {npc.description}",
-            memory_type="lore",
-            metadata={"universe_id": str(universe.id), "entity_type": "NPC", "name": npc.nom}
+    if world_knowledge.npc:
+        npc_texts = [f"{npc.nom} ({npc.faction or 'Sans faction'}): {npc.description}" for npc in world_knowledge.npc]
+        npc_metadatas = [{"universe_id": str(universe.id), "entity_type": "NPC", "name": npc.nom} for npc in world_knowledge.npc]
+        await add_batch_to_memory(
+            texts=npc_texts,
+            memory_types=["lore"] * len(npc_texts),
+            metadatas=npc_metadatas
         )
 
     # Save Locations to ChromaDB
-    for loc in world_knowledge.location:
-        await add_to_memory(
-            text=f"{loc.nom}: {loc.description}. Points d'intérêt: {', '.join(loc.points_interet)}",
-            memory_type="lore",
-            metadata={"universe_id": str(universe.id), "entity_type": "Location", "name": loc.nom}
+    if world_knowledge.location:
+        loc_texts = [f"{loc.nom}: {loc.description}. Points d'intérêt: {', '.join(loc.points_interet)}" for loc in world_knowledge.location]
+        loc_metadatas = [{"universe_id": str(universe.id), "entity_type": "Location", "name": loc.nom} for loc in world_knowledge.location]
+        await add_batch_to_memory(
+            texts=loc_texts,
+            memory_types=["lore"] * len(loc_texts),
+            metadatas=loc_metadatas
         )
 
     # Save Factions to ChromaDB
-    for fact in world_knowledge.faction:
-        await add_to_memory(
-            text=f"{fact.nom}: {fact.description}. Relations: {', '.join(fact.relations_politiques)}",
-            memory_type="lore",
-            metadata={"universe_id": str(universe.id), "entity_type": "Faction", "name": fact.nom}
+    if world_knowledge.faction:
+        fact_texts = [f"{fact.nom}: {fact.description}. Relations: {', '.join(fact.relations_politiques)}" for fact in world_knowledge.faction]
+        fact_metadatas = [{"universe_id": str(universe.id), "entity_type": "Faction", "name": fact.nom} for fact in world_knowledge.faction]
+        await add_batch_to_memory(
+            texts=fact_texts,
+            memory_types=["lore"] * len(fact_texts),
+            metadatas=fact_metadatas
         )
 
     return {"status": "success", "universe": universe}
