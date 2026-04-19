@@ -311,7 +311,7 @@ class ReferenceSetRequest(BaseModel):
     reference_portrait_url: str
 
 @app.post("/characters/generate-portrait")
-async def generate_portrait(request: PortraitRequest):
+async def generate_portrait(request: PortraitRequest, current_user: User = Depends(get_current_user)):
     """Génère un portrait de personnage basé sur une description textuelle et le sauvegarde localement."""
     try:
         # On utilise le même prompt generator mais orienté "portrait"
@@ -325,12 +325,14 @@ async def generate_portrait(request: PortraitRequest):
         local_url = await download_image_locally(image_url, "portrait")
         return {"reference_portrait_url": local_url}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erreur generate_portrait: {e}")
         return {"error": str(e)}
 
 @app.put("/characters/{character_id}/set-reference")
-async def set_reference_portrait(character_id: str, request: ReferenceSetRequest):
+async def set_reference_portrait(character_id: str, request: ReferenceSetRequest, current_user: User = Depends(get_current_user)):
     """Met à jour l'URL du portrait de référence d'un personnage."""
     try:
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -342,11 +344,16 @@ async def set_reference_portrait(character_id: str, request: ReferenceSetRequest
             if not char:
                 return {"error": f"Character {character_id} not found"}
 
+            if char.user_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Forbidden: You do not own this character")
+
             char.reference_portrait_url = request.reference_portrait_url
             session.add(char)
             await session.commit()
             return {"status": "success", "reference_portrait_url": char.reference_portrait_url}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erreur set_reference_portrait: {e}")
         return {"error": str(e)}
