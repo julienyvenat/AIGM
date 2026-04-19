@@ -23,6 +23,8 @@ class GameSystem(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
     description: str
     rules_summary: str
+    core_rules_prompt: str = Field(default="", sa_column=sqlalchemy.Column(sqlalchemy.Text))
+    character_schema: Dict[str, Any] = Field(default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
     dice_system: str
 
     universes: List["Universe"] = Relationship(back_populates="game_system")
@@ -82,14 +84,9 @@ class Character(SQLModel, table=True):
     x: int = Field(default=0)
     y: int = Field(default=0)
     reference_portrait_url: Optional[str] = Field(default=None)
-    strength: int = Field(default=10)
-    dexterity: int = Field(default=10)
-    constitution: int = Field(default=10)
-    intelligence: int = Field(default=10)
-    wisdom: int = Field(default=10)
-    charisma: int = Field(default=10)
     level: int = Field(default=1)
     experience: int = Field(default=0)
+    stats: Dict[str, Any] = Field(default_factory=dict, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
 
     known_spells: str = Field(default="[]")
     spell_slots: str = Field(default="{}")
