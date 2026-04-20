@@ -820,7 +820,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                                     websocket
                                 )
 
-                            arbitration_context = f"[Résultat du Système (NE PAS MONTRER AU JOUEUR)] : Le joueur a effectué une action. Le système a lancé un D20. Résultat du dé: {arbitration_res.roll_value}, Modificateur: {arbitration_res.modifier}, Total: {arbitration_res.total}. Succès: {arbitration_res.success}. Changement HP du joueur: {arbitration_res.hp_change}.{resource_msg}"
+                            arbitration_context = f"[Résultat du Système (NE PAS MONTRER AU JOUEUR)] : Le joueur a effectué une action. Le système a statué: {arbitration_res.narrative}. Succès: {arbitration_res.success}. Changement HP du joueur: {arbitration_res.hp_change}.{resource_msg}"
                         break # Only need one session
                 # --- END ARBITRATION BLOCK ---
 
