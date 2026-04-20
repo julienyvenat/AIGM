@@ -5,10 +5,10 @@ import os
 # Ensure backend directory is in the path for proper module resolution
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from agents.router import analyze_player_intent, IntentType, PlayerIntent
+from src.agents.router import analyze_player_intent, IntentType, PlayerIntent
 from unittest.mock import patch, MagicMock
 
-@patch('agents.router.client')
+@patch('src.agents.router.client')
 def test_analyze_player_intent_success_openai(mock_client):
     # Mocking a successful parse response
     mock_response = MagicMock()
@@ -28,7 +28,7 @@ def test_analyze_player_intent_success_openai(mock_client):
     assert result.target == "gobelin"
     assert result.action_type == "attack"
 
-@patch('agents.router.client')
+@patch('src.agents.router.client')
 def test_analyze_player_intent_failure_openai(mock_client):
     # Mocking a failure (raising an exception)
     mock_client.beta.chat.completions.parse.side_effect = Exception("API Error")
@@ -40,8 +40,8 @@ def test_analyze_player_intent_failure_openai(mock_client):
     assert result.target is None
     assert result.action_type == "null"
 
-@patch('agents.router.gemini_client')
-@patch('agents.router.LLM_PROVIDER', 'gemini')
+@patch('src.agents.router.gemini_client')
+@patch('src.agents.router.LLM_PROVIDER', 'gemini')
 def test_analyze_player_intent_success_gemini(mock_gemini_client):
     mock_response = MagicMock()
     mock_response.text = '{"intent": "ACTION", "summary": "Attaque au corps à corps", "target": "gobelin", "action_type": "attack"}'
@@ -54,8 +54,8 @@ def test_analyze_player_intent_success_gemini(mock_gemini_client):
     assert result.target == "gobelin"
     assert result.action_type == "attack"
 
-@patch('agents.router.gemini_client')
-@patch('agents.router.LLM_PROVIDER', 'gemini')
+@patch('src.agents.router.gemini_client')
+@patch('src.agents.router.LLM_PROVIDER', 'gemini')
 def test_analyze_player_intent_failure_gemini(mock_gemini_client):
     mock_gemini_client.models.generate_content.side_effect = Exception("API Error")
 
