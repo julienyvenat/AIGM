@@ -13,14 +13,11 @@ export function CharacterModal({ character, onClose, sendAction }: CharacterModa
     return mod >= 0 ? `+${mod}` : `${mod}`;
   };
 
-  const statBoxes = [
-    { name: 'STR', full: 'Force', value: character.strength || 10 },
-    { name: 'DEX', full: 'Dextérité', value: character.dexterity || 10 },
-    { name: 'CON', full: 'Constitution', value: character.constitution || 10 },
-    { name: 'INT', full: 'Intelligence', value: character.intelligence || 10 },
-    { name: 'WIS', full: 'Sagesse', value: character.wisdom || 10 },
-    { name: 'CHA', full: 'Charisme', value: character.charisma || 10 },
-  ];
+  const statBoxes = character.stats ? Object.entries(character.stats).map(([key, value]) => ({
+    name: key.substring(0, 3).toUpperCase(),
+    full: key.charAt(0).toUpperCase() + key.slice(1),
+    value: typeof value === 'number' ? value : parseInt(value as string) || 0
+  })) : [];
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center p-8 bg-gray-900/80 backdrop-blur-sm" onClick={onClose}>
@@ -76,7 +73,11 @@ export function CharacterModal({ character, onClose, sendAction }: CharacterModa
 
             {/* Ability Scores */}
             <div className="grid grid-cols-2 gap-4">
-              {statBoxes.map((stat) => (
+              {statBoxes.length === 0 ? (
+                <div className="col-span-2 text-center text-gray-500 italic p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                  Aucune statistique définie.
+                </div>
+              ) : statBoxes.map((stat) => (
                 <div key={stat.name} className="bg-gray-900/50 border border-gray-700 rounded-lg p-3 flex flex-col items-center relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1 bg-amber-900/30"></div>
                   <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider mb-1">{stat.full}</span>
@@ -96,7 +97,7 @@ export function CharacterModal({ character, onClose, sendAction }: CharacterModa
                </div>
                <div className="border-x border-gray-700">
                   <div className="text-sm text-gray-400 mb-1">Init</div>
-                  <div className="text-xl font-bold text-gray-200">{getModifier(character.dexterity || 10)}</div>
+                  <div className="text-xl font-bold text-gray-200">{character.stats && character.stats.dexterity ? getModifier(typeof character.stats.dexterity === "number" ? character.stats.dexterity : parseInt(character.stats.dexterity) || 10) : 0}</div>
                </div>
                <div>
                   <div className="text-sm text-gray-400 mb-1">Speed</div>
