@@ -4,6 +4,8 @@ export interface GameSystem {
   description: string;
   rules_summary: string;
   dice_system: string;
+  core_rules_prompt: string;
+  character_schema: Record<string, string>;
 }
 
 export interface Universe {
@@ -36,12 +38,7 @@ export interface Character {
   armor_class: number;
   speed: number;
   reference_portrait_url: string | null;
-  strength: number;
-  dexterity: number;
-  constitution: number;
-  intelligence: number;
-  wisdom: number;
-  charisma: number;
+  stats: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   level: number;
   experience: number;
   known_spells: Record<string, unknown>[];
