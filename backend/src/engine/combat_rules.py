@@ -1,4 +1,4 @@
-import random
+import secrets
 from dataclasses import dataclass, replace
 
 
@@ -28,7 +28,7 @@ def roll_dice(sides: int, amount: int = 1) -> int:
     """
     if amount <= 0 or sides <= 0:
         return 0
-    return sum(random.randint(1, sides) for _ in range(amount))
+    return sum(secrets.randbelow(sides) + 1 for _ in range(amount))
 
 
 def resolve_attack(attack_roll: int, base_damage: int, target_ac: int) -> int:

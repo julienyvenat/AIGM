@@ -1,5 +1,5 @@
 import re
-import random
+import secrets
 from uuid import UUID
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ def roll_dice(notation: str) -> int:
     modifier_sign = match.group(3)
     modifier_val = int(match.group(4)) if match.group(4) else 0
 
-    total = sum(random.randint(1, sides) for _ in range(num_dice))
+    total = sum(secrets.randbelow(sides) + 1 for _ in range(num_dice))
 
     if modifier_sign == "+":
         total += modifier_val
