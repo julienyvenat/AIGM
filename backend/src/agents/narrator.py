@@ -157,46 +157,6 @@ GEMINI_GAME_TOOLS = [
     ])
 ]
 
-async def get_combat_state(session: AsyncSession, universe_id=None) -> list:
-    """Returns the combat state (entities with X, Y, HP, etc.)"""
-    try:
-        entities = []
-        if universe_id:
-            # Get PC
-            st_char = select(Character).where(Character.universe_id == universe_id)
-            res_char = await session.execute(st_char)
-            chars = res_char.scalars().all()
-            for c in chars:
-                entities.append({
-                    "id": str(c.id),
-                    "name": c.name,
-                    "is_pc": True,
-                    "hp": c.hp,
-                    "max_hp": c.max_hp,
-                    "x": c.x,
-                    "y": c.y
-                })
-
-            # Get NPCs in combat
-            st_npc = select(WorldNPCTable).where(WorldNPCTable.universe_id == universe_id).where(WorldNPCTable.is_in_combat == True)
-            res_npc = await session.execute(st_npc)
-            npcs = res_npc.scalars().all()
-            for npc in npcs:
-                entities.append({
-                    "id": str(npc.id),
-                    "name": npc.nom,
-                    "is_pc": False,
-                    "hp": npc.hp if npc.hp else 10,
-                    "max_hp": npc.hp if npc.hp else 10,
-                    "x": npc.x,
-                    "y": npc.y
-                })
-        return entities
-    except Exception as e:
-        import logging
-        logging.error(f"Error in get_combat_state: {e}")
-        return []
-
 async def dispatch_tool_call(session: AsyncSession, tool_name: str, args: dict) -> str:
     """Helper to dispatch tool logic"""
     try:
