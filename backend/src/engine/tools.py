@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import Character, Item, InventorySlot, ItemType
+from .models import Character, Item, InventorySlot, ItemType, WorldNPCTable
 
 def roll_dice(notation: str) -> int:
     """Parse dice notation like '1d20+3' and return result."""
@@ -28,11 +28,12 @@ def roll_dice(notation: str) -> int:
 
     return total
 
-async def get_combat_state(session: AsyncSession) -> list[dict]:
-    """Returns a list of all Characters with their coordinates and HP."""
-    statement = select(Character)
-    result = await session.execute(statement)
-    characters = result.scalars().all()
+async def get_combat_state(session: AsyncSession, universe_id: UUID) -> list[dict]:
+    """Returns a list of Characters and NPCs in combat within the specified universe."""
+    # PCs
+    char_statement = select(Character).where(Character.universe_id == universe_id)
+    char_result = await session.execute(char_statement)
+    characters = char_result.scalars().all()
 
     state = []
     for char in characters:
@@ -43,8 +44,27 @@ async def get_combat_state(session: AsyncSession) -> list[dict]:
             "max_hp": char.max_hp,
             "x": char.x,
             "y": char.y,
-            "is_pc": char.is_pc,
+            "is_pc": True,
             "reference_portrait_url": char.reference_portrait_url
+        })
+
+    # NPCs
+    npc_statement = select(WorldNPCTable).where(
+        WorldNPCTable.universe_id == universe_id,
+        WorldNPCTable.is_in_combat == True
+    )
+    npc_result = await session.execute(npc_statement)
+    npcs = npc_result.scalars().all()
+    for npc in npcs:
+        state.append({
+            "id": str(npc.id),
+            "name": npc.nom,
+            "hp": npc.hp if npc.hp else 10,
+            "max_hp": npc.hp if npc.hp else 10,
+            "x": npc.x,
+            "y": npc.y,
+            "is_pc": False,
+            "reference_portrait_url": None
         })
     return state
 
