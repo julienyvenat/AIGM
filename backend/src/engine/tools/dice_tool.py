@@ -1,5 +1,5 @@
 import re
-import random
+import secrets
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -75,7 +75,7 @@ def roll_dice(expression: str) -> DiceRollResult:
                  raise ValueError(f"Invalid number of dice: {num_dice}")
 
             for _ in range(num_dice):
-                roll = random.randint(1, num_sides)
+                roll = secrets.randbelow(num_sides) + 1
                 # Keep the roll positive in individual results, apply sign to total
                 individual_results.append(roll)
                 total += roll * sign_multiplier
