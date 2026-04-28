@@ -65,3 +65,6 @@ L'architecture multi-agents a été entièrement repensée pour être 100% agnos
 * **Agent Arbitre Dynamique :** Le LLM ne s'appuie plus sur un prompt en dur. Il construit sa compréhension du jeu en fusionnant son rôle d'Arbitre avec le `core_rules_prompt` défini dans la base de données pour le système de jeu de la session actuelle.
 * **Injection de Contexte Flexible :** Les statistiques des personnages (le champ JSON `stats`) sont injectées dynamiquement dans le System Prompt. L'IA s'adapte ainsi à n'importe quel ensemble de caractéristiques (Force/Dextérité, Vigueur/Agilité, etc.).
 * **Tool Calling (Boucle Agentique) :** L'Arbitre gère entièrement la résolution mécanique. Le code Python ne connaît plus les règles de calcul. L'Agent LLM appelle explicitement l'outil Python `roll_dice` via la fonction d'appel d'outils (Tool Calling / MCP). Python exécute le calcul et renvoie le résultat brut au LLM. Le LLM analyse ensuite le résultat des dés à l'aide des règles du système, décide du succès ou de l'échec de l'action, et génère le narratif final.
+
+## Updates
+- Formulaire de création de personnage dynamique ajouté (Agnostic Form Part 2).
