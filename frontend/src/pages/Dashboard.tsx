@@ -139,7 +139,7 @@ export const Dashboard = () => {
                  <li key={session.id} className="bg-gray-700 p-4 rounded-md">
                     <div className="flex justify-between items-start">
                       <div>
-                        <h3 className="font-bold text-white">Session #${session.id}</h3>
+                        <h3 className="font-bold text-white">Session #{session.id}</h3>
                         <p className="text-sm text-gray-400">Univers: {session.universe?.name || session.universe_id}</p>
                       </div>
                       {session.universe?.game_system && (
