@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 
+from src.auth.utils import create_access_token
 from src.engine.database import engine as db_engine
 from src.engine.models import (
     ChatMessage,
@@ -28,6 +29,7 @@ from src.engine.models import (
     GameSession,
     GameSessionStatus,
     Universe,
+    User,
     WorldNPCTable,
 )
 from src.main import app
@@ -56,9 +58,14 @@ def seeded_battle_session():
             await session.commit()
             await session.refresh(universe)
 
+            user = User(username="reconnect-test-user", hashed_password="pw")
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
             character = Character(
                 name="Hero", hp=10, max_hp=10, armor_class=10, speed=30,
-                universe_id=universe.id,
+                universe_id=universe.id, user_id=user.id,
             )
             session.add(character)
 
@@ -89,15 +96,16 @@ def seeded_battle_session():
             session.add(chat_msg)
             await session.commit()
 
-        return character, game_session
+        return character, game_session, user
 
     return asyncio.run(_setup())
 
 
 def test_reconnect_resends_chat_history_and_battle_state(seeded_battle_session):
-    character, game_session = seeded_battle_session
+    character, game_session, user = seeded_battle_session
+    token = create_access_token(user.id)
 
-    with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{character.id}") as ws:
+    with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{character.id}?token={token}") as ws:
         history_msg = ws.receive_json()
         assert history_msg["type"] == "history"
         contents = [m["message"] for m in history_msg["messages"]]

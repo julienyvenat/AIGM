@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
 from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
 from src.engine.services.character_service import validate_character_stats, SchemaValidationError
-from src.auth.deps import get_current_user
+from src.auth.deps import get_current_user, get_user_from_token
 
 
 
@@ -386,6 +386,48 @@ async def set_reference_portrait(character_id: str, request: ReferenceSetRequest
 @app.websocket("/ws/{session_id}/{player_id}")
 
 async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: str):
+    import uuid
+
+    # --- Auth: verify the JWT passed as a `token` query param (browsers
+    # can't set custom WS headers, cf. AGENTS.md §7). Reject before
+    # accepting the connection if it's missing/invalid, or if the
+    # authenticated user isn't the owner of the `player_id` Character they
+    # are trying to connect as (same ownership check as the
+    # /sessions/{id}/join and /characters/{id}/set-reference HTTP routes).
+    token = websocket.query_params.get("token")
+    authorized_user = None
+    if token:
+        async for auth_session in get_session():
+            authorized_user = await get_user_from_token(token, auth_session)
+            break
+
+    if authorized_user is None:
+        logger.warning(
+            f"Connexion WebSocket refusée (token manquant/invalide) pour player_id={player_id}, session={session_id}."
+        )
+        await websocket.close(code=1008)
+        return
+
+    try:
+        character_uuid = uuid.UUID(player_id)
+    except ValueError:
+        character_uuid = None
+
+    owns_character = False
+    if character_uuid is not None:
+        async for auth_session in get_session():
+            char_result = await auth_session.execute(select(Character).where(Character.id == character_uuid))
+            character = char_result.scalars().first()
+            owns_character = character is not None and character.user_id == authorized_user.id
+            break
+
+    if not owns_character:
+        logger.warning(
+            f"Connexion WebSocket refusée (utilisateur {authorized_user.id} n'est pas propriétaire du personnage {player_id})."
+        )
+        await websocket.close(code=1008)
+        return
+
     await manager.connect(websocket, session_id)
 
     # Load and send chat history
