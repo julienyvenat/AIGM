@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
 from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
 from src.engine.services.character_service import validate_character_stats, SchemaValidationError
-from src.auth.deps import get_current_user
+from src.auth.deps import get_current_user, get_user_from_token
 
 
 
@@ -54,7 +54,7 @@ async def save_chat_message_background(player_id: str | None, sender: str, msg_t
     except Exception as e:
         logger.error(f"Erreur lors de la sauvegarde du message en arrière-plan: {e}")
 
-async def background_image_generation(player_id: str, description: str, manager: "ConnectionManager"):
+async def background_image_generation(player_id: str, description: str, manager: "ConnectionManager", session_id: str):
     try:
         # 1. Génération du prompt
         async for session in get_session():
@@ -383,16 +383,58 @@ async def set_reference_portrait(character_id: str, request: ReferenceSetRequest
         logger.error(f"Erreur set_reference_portrait: {e}")
         return {"error": str(e)}
 
-@app.websocket("/ws/{player_id}")
+@app.websocket("/ws/{session_id}/{player_id}")
 
-async def websocket_endpoint(websocket: WebSocket, player_id: str):
-    await manager.connect(websocket)
+async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: str):
+    import uuid
+
+    # --- Auth: verify the JWT passed as a `token` query param (browsers
+    # can't set custom WS headers, cf. AGENTS.md §7). Reject before
+    # accepting the connection if it's missing/invalid, or if the
+    # authenticated user isn't the owner of the `player_id` Character they
+    # are trying to connect as (same ownership check as the
+    # /sessions/{id}/join and /characters/{id}/set-reference HTTP routes).
+    token = websocket.query_params.get("token")
+    authorized_user = None
+    if token:
+        async for auth_session in get_session():
+            authorized_user = await get_user_from_token(token, auth_session)
+            break
+
+    if authorized_user is None:
+        logger.warning(
+            f"Connexion WebSocket refusée (token manquant/invalide) pour player_id={player_id}, session={session_id}."
+        )
+        await websocket.close(code=1008)
+        return
+
+    try:
+        character_uuid = uuid.UUID(player_id)
+    except ValueError:
+        character_uuid = None
+
+    owns_character = False
+    if character_uuid is not None:
+        async for auth_session in get_session():
+            char_result = await auth_session.execute(select(Character).where(Character.id == character_uuid))
+            character = char_result.scalars().first()
+            owns_character = character is not None and character.user_id == authorized_user.id
+            break
+
+    if not owns_character:
+        logger.warning(
+            f"Connexion WebSocket refusée (utilisateur {authorized_user.id} n'est pas propriétaire du personnage {player_id})."
+        )
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(websocket, session_id)
 
     # Load and send chat history
     try:
         async for session in get_session():
             statement = select(ChatMessage).where(
-                or_(ChatMessage.player_id == character_id, ChatMessage.player_id == None)
+                or_(ChatMessage.player_id == player_id, ChatMessage.player_id == None)
             ).order_by(ChatMessage.timestamp)
             results = await session.execute(statement)
             history_msgs = results.scalars().all()
@@ -415,20 +457,23 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 )
 
             # Send initial battle state if applicable
+            # (game_mode / battlemap state live on the GameSession, not the Character)
             async for session in get_session():
                 import uuid
-                statement = select(Character).where(Character.id == uuid.UUID(character_id))
-                results = await session.execute(statement)
-                char = results.scalars().first()
-                if char and char.game_mode == "BATTLE" and char.battlemap_image_url:
+                try:
+                    game_session_uuid = uuid.UUID(session_id)
+                except ValueError:
+                    game_session_uuid = None
+                game_session = await session.get(GameSession, game_session_uuid) if game_session_uuid else None
+                if game_session and game_session.game_mode == "BATTLE" and game_session.current_battlemap_url:
                     await manager.send_personal_message(
-                        {"type": "battlemap_update", "url": char.battlemap_image_url},
+                        {"type": "battlemap_update", "url": game_session.current_battlemap_url},
                         websocket
                     )
 
                     # Also send combat state
                     from src.agents.narrator import get_combat_state
-                    combat_state = await get_combat_state(session, char.universe_id)
+                    combat_state = await get_combat_state(session, game_session.universe_id)
                     await manager.send_personal_message(
                         {"type": "combat_state", "entities": combat_state},
                         websocket
@@ -467,7 +512,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     async for session in get_session():
                         try:
                             # Verify character
-                            stmt_char = select(Character).where(Character.id == uuid.UUID(character_id))
+                            stmt_char = select(Character).where(Character.id == uuid.UUID(player_id))
                             res_char = await session.execute(stmt_char)
                             char = res_char.scalars().first()
 
@@ -600,19 +645,19 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
 
             # Sanitize player_id and player_text to prevent log injection
-            sanitized_player_id = str(character_id).replace('\n', '\\n').replace('\r', '\\r')
+            sanitized_player_id = str(player_id).replace('\n', '\\n').replace('\r', '\\r')
             sanitized_player_text = str(player_text).replace('\n', '\\n').replace('\r', '\\r')
             logger.info(f"[{sanitized_player_id}] Dit: {sanitized_player_text}")
 
             # Save player message (background)
-            task = asyncio.create_task(save_chat_message_background(character_id, "user", "chat", player_text))
+            task = asyncio.create_task(save_chat_message_background(player_id, "user", "chat", player_text))
             background_tasks.add(task)
             task.add_done_callback(background_tasks.discard)
 
             if player_text.strip() == "/battle":
                 import uuid
                 async for session in get_session():
-                    statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                    statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
                     if char:
@@ -634,7 +679,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         await session.commit()
 
                         sys_msg = "The player just initiated combat. Describe the current environment and the enemies present in one short paragraph."
-                        narrator_reply = await generate_narrator_response(session, character_id, sys_msg, game_mode="BATTLE")
+                        narrator_reply = await generate_narrator_response(session, player_id, sys_msg, game_mode="BATTLE")
 
                         await manager.broadcast_to_session({
                             "type": "narrator",
@@ -662,7 +707,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         }, session_id)
                                     break
 
-                        task = asyncio.create_task(generate_and_update_battlemap(character_id, narrator_reply, char.id))
+                        task = asyncio.create_task(generate_and_update_battlemap(player_id, narrator_reply, char.id))
                         background_tasks.add(task)
                         task.add_done_callback(background_tasks.discard)
 
@@ -678,7 +723,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             if player_text.strip() == "/endbattle":
                 import uuid
                 async for session in get_session():
-                    statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                    statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
                     if char:
@@ -726,7 +771,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     import uuid
                     async for session in get_session():
                         # Try to find the character for this player
-                        statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                        statement = select(Character).where(Character.id == uuid.UUID(player_id))
                         result = await session.execute(statement)
                         char = result.scalars().first()
 
@@ -824,18 +869,20 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                         break # Only need one session
                 # --- END ARBITRATION BLOCK ---
 
-                # 1. Récupération de la mémoire RAG (Lore)
-                contexte_rag = await get_relevant_context(player_text, universe_id=universe_id, filter_type='lore')
-
-                # 2. Générer le texte du Narrateur
+                # 1. Récupérer le personnage pour connaître son univers et son mode de jeu
                 async for session in get_session():
                     import uuid
-                    statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                    statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
                     game_mode = char.game_mode if char else "NARRATIVE"
+                    universe_id = char.universe_id if char else None
 
-                    narrator_reply = await generate_narrator_response(session, character_id, player_text, context=contexte_rag + '\n\n' + arbitration_context, game_mode=game_mode)
+                    # 2. Récupération de la mémoire RAG (Lore), filtrée par univers
+                    contexte_rag = await get_relevant_context(player_text, universe_id=universe_id, filter_type='lore')
+
+                    # 3. Générer le texte du Narrateur
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag + '\n\n' + arbitration_context, game_mode=game_mode)
 
                     if game_mode == "BATTLE":
                         from src.agents.narrator import get_combat_state
@@ -846,12 +893,12 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
         }, session_id)
                     break # Une seule session suffit
 
-                # 3. Sauvegarder ce texte en BDD (UNE SEULE FOIS, via tâche asynchrone non-bloquante)
+                # 4. Sauvegarder ce texte en BDD (UNE SEULE FOIS, via tâche asynchrone non-bloquante)
                 task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
 
-                # 4. Diffuser le texte via WebSocket
+                # 5. Diffuser le texte via WebSocket
                 await manager.broadcast_to_session(
                     {
                         "type": "narrator",
@@ -860,12 +907,12 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     }, session_id
                 )
 
-                # 5. Appeler le scene_editor
+                # 6. Appeler le scene_editor
                 scene_decision = await analyze_scene(narrator_reply)
 
-                # 6. SI ET SEULEMENT SI la décision est GENERATE, lancer la tâche asynchrone
+                # 7. SI ET SEULEMENT SI la décision est GENERATE, lancer la tâche asynchrone
                 if scene_decision.decision == ImageDecision.GENERATE or scene_decision.decision.value == "GENERATE":
-                    task = asyncio.create_task(background_image_generation(character_id, narrator_reply, manager, session_id))
+                    task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager, session_id))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:
@@ -874,7 +921,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
                 async for session in get_session():
-                    narrator_reply = await generate_narrator_response(session, character_id, player_text)
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text)
 
                 # Envoi du message au joueur concerné
                 await manager.send_personal_message(
@@ -894,23 +941,16 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 )
 
                 # Save narrator personal message (background)
-                task = asyncio.create_task(save_chat_message_background(character_id, "narrator", "narrator", narrator_reply, intent.intent.value))
+                task = asyncio.create_task(save_chat_message_background(player_id, "narrator", "narrator", narrator_reply, intent.intent.value))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
     except Exception as e:
-        logger.error(f"Erreur inattendue WebSocket pour {character_id}: {e}")
+        logger.error(f"Erreur inattendue WebSocket pour {player_id}: {e}")
         manager.disconnect(websocket, session_id)
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-# Expose images directory to frontend
-from fastapi.staticfiles import StaticFiles
-import os
-
-os.makedirs("backend/images", exist_ok=True)
-app.mount("/images", StaticFiles(directory="backend/images"), name="images")

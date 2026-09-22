@@ -12,7 +12,7 @@ import chromadb
 # que l'initialisation du module (au chargement) utilisera le fallback par défaut.
 os.environ.pop("OPENAI_API_KEY", None)
 
-from memory import vector_db
+from src.memory import vector_db
 
 # On utilise pytest-asyncio
 pytestmark = pytest.mark.asyncio
@@ -41,22 +41,25 @@ def mock_chroma_client():
 async def test_add_and_get_memory():
     """Teste le flux complet d'ajout et de récupération avec mock d'embeddings par défaut"""
 
+    # Toutes les mémoires sont scopées à un univers (isolation multi-tenant, cf. AGENTS.md)
+    universe_id = "11111111-1111-1111-1111-111111111111"
+
     # Ajout de mémoires factices
     text1 = "Le forgeron de la ville s'appelle Thorin."
     text2 = "Les joueurs ont volé une pomme au marché."
 
     # L'ajout devrait fonctionner sans exception
-    doc_id1 = await vector_db.add_to_memory(text=text1, memory_type="lore")
+    doc_id1 = await vector_db.add_to_memory(text=text1, memory_type="lore", metadata={"universe_id": universe_id})
     assert doc_id1 is not None
 
-    doc_id2 = await vector_db.add_to_memory(text=text2, memory_type="session_log")
+    doc_id2 = await vector_db.add_to_memory(text=text2, memory_type="session_log", metadata={"universe_id": universe_id})
     assert doc_id2 is not None
 
     # Petit délai pour laisser ChromaDB indexer si nécessaire
     await asyncio.sleep(0.1)
 
-    # Récupération sans filtre
-    result_all = await vector_db.get_relevant_context(query="Qui est le forgeron ?", limit=5)
+    # Récupération sans filtre de type, filtrée par universe_id
+    result_all = await vector_db.get_relevant_context(query="Qui est le forgeron ?", universe_id=universe_id, limit=5)
 
     # Vérifie que les résultats contiennent les textes formatés attendus
     assert "[Catégorie : lore] - Le forgeron de la ville s'appelle Thorin." in result_all
@@ -66,7 +69,7 @@ async def test_add_and_get_memory():
     assert "\n\n" in result_all
 
     # Récupération avec filtre
-    result_filtered = await vector_db.get_relevant_context(query="Qui est le forgeron ?", limit=5, filter_type="lore")
+    result_filtered = await vector_db.get_relevant_context(query="Qui est le forgeron ?", universe_id=universe_id, limit=5, filter_type="lore")
     assert "[Catégorie : lore] - Le forgeron de la ville s'appelle Thorin." in result_filtered
     assert "[Catégorie : session_log]" not in result_filtered
 

@@ -10,7 +10,7 @@ interface CharacterCreationFormProps {
 export const CharacterCreationForm = ({ universes, onSuccess }: CharacterCreationFormProps) => {
   const [newCharName, setNewCharName] = useState("");
   const [newCharUniverseId, setNewCharUniverseId] = useState("");
-  const [stats, setStats] = useState<Record<string, any>>({});
+  const [stats, setStats] = useState<Record<string, string | number>>({});
   const [creatingChar, setCreatingChar] = useState(false);
   const [charCreateError, setCharCreateError] = useState<string | null>(null);
 
@@ -42,15 +42,17 @@ export const CharacterCreationForm = ({ universes, onSuccess }: CharacterCreatio
     try {
       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       
-      // Parse stats correctly based on schema
-      const formattedStats: Record<string, any> = {};
+      // character_schema only maps each stat key to a human-readable description
+      // (e.g. "STR": "Force - Puissance physique"), it carries no type information.
+      // Every stat is entered as a number (see the "number" inputs below), so
+      // convert to a number here and only fall back to the raw string if that fails.
+      const formattedStats: Record<string, string | number> = {};
       Object.keys(schema).forEach(key => {
-         const type = schema[key];
-         if (type === 'int' || type === 'number') {
-             formattedStats[key] = stats[key] ? Number(stats[key]) : 0;
-         } else {
-             formattedStats[key] = stats[key] || '';
-         }
+         const rawValue = stats[key];
+         const numericValue = Number(rawValue);
+         formattedStats[key] = rawValue !== undefined && rawValue !== '' && !Number.isNaN(numericValue)
+           ? numericValue
+           : (rawValue || '');
       });
 
       const response = await apiFetch(`${baseUrl}/characters/`, {
@@ -115,11 +117,11 @@ export const CharacterCreationForm = ({ universes, onSuccess }: CharacterCreatio
           <div className="mt-4">
              <h3 className="text-lg font-bold text-gray-300 mb-3 border-b border-gray-700 pb-2">Statistiques</h3>
              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                 {Object.entries(schema).map(([key, type]) => (
+                 {Object.entries(schema).map(([key, description]) => (
                     <div key={key} className="flex flex-col">
-                       <label className="block text-sm font-medium text-gray-400 mb-1 uppercase tracking-wider">{key}</label>
+                       <label className="block text-sm font-medium text-gray-400 mb-1 uppercase tracking-wider" title={String(description)}>{key}</label>
                        <input
-                          type={type === 'int' || type === 'number' ? 'number' : 'text'}
+                          type="number"
                           value={stats[key] || ''}
                           onChange={(e) => handleStatChange(key, e.target.value)}
                           className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"

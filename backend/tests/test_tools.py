@@ -1,8 +1,8 @@
 import pytest
 from uuid import uuid4
 from sqlmodel import select
-from engine.models import Character, Item
-from engine.tools import execute_attack, move_entity, roll_dice
+from src.engine.models import Character, InventorySlot, Item, ItemType
+from src.engine.tools import execute_attack, move_entity, roll_dice
 
 @pytest.mark.asyncio
 async def test_execute_attack_with_weapon(db_session, monkeypatch):
@@ -14,10 +14,11 @@ async def test_execute_attack_with_weapon(db_session, monkeypatch):
             return 8   # Max dégâts
         return 1
 
-    monkeypatch.setattr("engine.tools.roll_dice", mock_roll_dice)
+    monkeypatch.setattr("src.engine.tools.roll_dice", mock_roll_dice)
 
-    attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30)
-    target = Character(name="Target", hp=10, max_hp=10, armor_class=10, speed=30)
+    universe_id = uuid4()
+    attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=universe_id)
+    target = Character(name="Target", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=universe_id)
 
     db_session.add(attacker)
     db_session.add(target)
@@ -25,8 +26,20 @@ async def test_execute_attack_with_weapon(db_session, monkeypatch):
     await db_session.refresh(attacker)
     await db_session.refresh(target)
 
-    weapon = Item(character_id=attacker.id, name="Sword", item_type="weapon", damage_dice="1d8")
+    # Items belong to the universe's shared catalog and are equipped onto a
+    # character via InventorySlot; weapon damage lives in the generic
+    # `attributes` JSON field (agnostic item model, see AGENTS.md §8), not a
+    # dedicated `damage_dice` column.
+    weapon = Item(
+        universe_id=universe_id, name="Sword", item_type=ItemType.WEAPON,
+        attributes={"damage": "1d8"},
+    )
     db_session.add(weapon)
+    await db_session.commit()
+    await db_session.refresh(weapon)
+
+    slot = InventorySlot(character_id=attacker.id, item_id=weapon.id, is_equipped=True)
+    db_session.add(slot)
     await db_session.commit()
 
     result_str = await execute_attack(db_session, attacker.id, target.id)
@@ -44,10 +57,10 @@ async def test_execute_attack_unarmed_and_hp_not_negative(db_session, monkeypatc
             return 4
         return 1
 
-    monkeypatch.setattr("engine.tools.roll_dice", mock_roll_dice)
+    monkeypatch.setattr("src.engine.tools.roll_dice", mock_roll_dice)
 
-    attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30)
-    target = Character(name="Weak Target", hp=2, max_hp=2, armor_class=10, speed=30)
+    attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=uuid4())
+    target = Character(name="Weak Target", hp=2, max_hp=2, armor_class=10, speed=30, universe_id=uuid4())
 
     db_session.add(attacker)
     db_session.add(target)
@@ -63,7 +76,7 @@ async def test_execute_attack_unarmed_and_hp_not_negative(db_session, monkeypatc
 
 @pytest.mark.asyncio
 async def test_move_entity_success(db_session):
-    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0, universe_id=uuid4())
     db_session.add(char)
     await db_session.commit()
     await db_session.refresh(char)
@@ -78,7 +91,7 @@ async def test_move_entity_success(db_session):
 
 @pytest.mark.asyncio
 async def test_move_entity_too_far(db_session):
-    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0, universe_id=uuid4())
     db_session.add(char)
     await db_session.commit()
     await db_session.refresh(char)
@@ -89,7 +102,7 @@ async def test_move_entity_too_far(db_session):
 
 @pytest.mark.asyncio
 async def test_move_entity_boundary(db_session):
-    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0, universe_id=uuid4())
     db_session.add(char)
     await db_session.commit()
     await db_session.refresh(char)

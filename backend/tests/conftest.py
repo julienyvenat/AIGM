@@ -1,3 +1,10 @@
+import os
+
+# Tests must never depend on the production SECRET_KEY. Set a fixed dummy value
+# here, before any test module imports src.* (which would otherwise fail fast,
+# see src/auth/utils.py), unless the environment already provides one.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine

@@ -50,7 +50,7 @@ Pour vérifier que tout fonctionne comme prévu, je te suggère ce scénario de 
 Avant de crier victoire, jette un œil rapide à ces deux points :
 * **Dossier Images :** Vérifie dans ton dossier `backend/images`. Tu devrais y voir le fichier `.png` de ton personnage ou de tes scènes.
 * **Console Network :** Vérifiez sur le navigateur que vos appels partent bien avec le Header `Authorization: Bearer <votre_token>`.
-* **Tests unitaires de sécurité :** Exécutez `export PYTHONPATH=backend && pytest backend/test_integration.py` pour valider que le backend repousse correctement (code HTTP 403) un utilisateur essayant de se connecter avec le personnage d'un autre joueur.
+* **Suite de tests backend :** Depuis `backend/`, exécutez `pytest tests src/__tests__` pour lancer l'ensemble des tests unitaires et de sécurité (auth, WebSocket, arbitrage, mémoire vectorielle, etc.).
 
 ## Modèles de données
 

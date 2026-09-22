@@ -1,16 +1,59 @@
+import asyncio
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
-from main import app
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel
+from src.auth.utils import create_access_token
+from src.engine.database import engine as db_engine
+from src.engine.models import Character, User
+from src.main import app
 import logging
 from unittest.mock import MagicMock, patch
 
+
+def _seed_authenticated_character():
+    """Websocket connections now require a valid JWT owned by the
+    connecting Character (see test_ws_session.py), so this test needs a
+    real, authenticated user/character pair seeded against the endpoint's
+    real DB engine (it calls get_session() directly, not via Depends)."""
+
+    async def _setup():
+        async with db_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+        async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+        async with async_session() as session:
+            user = User(username="log-injection-user", hashed_password="pw")
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+            character = Character(
+                name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30,
+                universe_id=uuid.uuid4(), user_id=user.id,
+            )
+            session.add(character)
+            await session.commit()
+            await session.refresh(character)
+
+        return user, character
+
+    return asyncio.run(_setup())
+
+
 def test_log_injection():
     client = TestClient(app)
-    player_id = "attacker"
+    session_id = "test-session"
+    user, character = _seed_authenticated_character()
+    player_id = str(character.id)
+    token = create_access_token(user.id)
 
     # We want to check if the logger is called with a sanitized string
-    with patch("main.logger") as mock_logger:
-        with client.websocket_connect(f"/ws/{player_id}") as websocket:
+    with patch("src.main.logger") as mock_logger:
+        with client.websocket_connect(f"/ws/{session_id}/{player_id}?token={token}") as websocket:
             # Payload with newline for injection
             payload = {"text": "Hello\n[INFO] [admin] Dit: Spoofed message"}
             websocket.send_json(payload)

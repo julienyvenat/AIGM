@@ -1,97 +1,117 @@
+"""
+Tests for authentication/authorization on /ws/{session_id}/{player_id}.
+
+The endpoint now requires a valid JWT, passed as a `token` query param
+(browsers can't send custom WS headers, cf. AGENTS.md §7), AND requires that
+the authenticated user actually owns the `player_id` Character they're
+connecting as (src/main.py::websocket_endpoint, via
+src/auth/deps.py::get_user_from_token). A missing/invalid/expired token, or
+a valid token for a user who doesn't own that Character, must be rejected
+with a close before the connection is ever accepted (code=1008) -- and must
+never reach `manager.connect(...)`.
+
+Like test_ws_reconnect.py, this seeds data through the *real* async engine
+(`src.engine.database.engine`): the websocket endpoint loads its DB session
+by calling `get_session()` directly rather than via FastAPI `Depends`, so
+`app.dependency_overrides` has no effect on it.
+"""
+import asyncio
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
-from src.main import app, get_session
-from src.engine.models import User, Character, GameSession, SessionParticipants, GameSessionStatus
-import uuid
-from fastapi import status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel
+
 from src.auth.utils import create_access_token
+from src.engine.database import engine as db_engine
+from src.engine.models import Character, GameSession, GameSessionStatus, SessionParticipants, User
+from src.main import app
 
-@pytest.fixture(name="session")
-def session_fixture():
-    engine = create_engine("sqlite:///:memory:")
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        yield session
 
-@pytest.fixture(name="client")
-def client_fixture(session: Session):
-    def get_session_override():
-        # Make the synchronous session behave somewhat like the async one for testing
-        class AsyncSessionMock:
-            def __init__(self, s):
-                self.s = s
-            async def execute(self, stmt):
-                return self.s.execute(stmt)
-            async def commit(self):
-                self.s.commit()
-            async def refresh(self, obj):
-                self.s.refresh(obj)
-            def add(self, obj):
-                self.s.add(obj)
+def _seed_user_and_character(username: str):
+    """Creates a User and a Character owned by them, plus an ACTIVE
+    GameSession the character has joined (SessionParticipants), directly
+    against the app's real database engine. Returns (user, character, game_session).
+    """
 
-        async def mock_gen():
-            yield AsyncSessionMock(session)
+    async def _setup():
+        async with db_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
 
-        return mock_gen()
+        async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+        async with async_session() as session:
+            user = User(username=username, hashed_password="pw")
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
 
-    app.dependency_overrides[get_session] = get_session_override
-    client = TestClient(app)
-    yield client
-    app.dependency_overrides.clear()
+            character = Character(
+                name=f"{username}-hero", hp=10, max_hp=10, armor_class=10, speed=30,
+                universe_id=uuid.uuid4(), user_id=user.id,
+            )
+            session.add(character)
 
-@pytest.mark.asyncio
-async def test_ws_bad_token(client: TestClient):
-    with pytest.raises(Exception) as exc_info:
-        with client.websocket_connect("/ws/dummy_session/dummy_char"):
+            game_session = GameSession(universe_id=character.universe_id, status=GameSessionStatus.ACTIVE)
+            session.add(game_session)
+            await session.commit()
+            await session.refresh(character)
+            await session.refresh(game_session)
+
+            session.add(SessionParticipants(character_id=character.id, session_id=game_session.id))
+            await session.commit()
+
+        return user, character, game_session
+
+    return asyncio.run(_setup())
+
+
+def test_ws_bad_token():
+    """No token, and a garbage/unsigned token, must both be rejected."""
+    _user, character, game_session = _seed_user_and_character("bad-token-user")
+
+    with pytest.raises(Exception):
+        with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{character.id}"):
             pass
 
-    try:
-        with client.websocket_connect("/ws/dummy_session/dummy_char?token=invalid_token"):
+    with pytest.raises(Exception):
+        with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{character.id}?token=not-a-real-jwt"):
             pass
-    except Exception as e:
-        pass
 
-@pytest.mark.asyncio
-async def test_ws_unauthorized_user(session: Session, client: TestClient):
-    user = User(username="testuser", hashed_password="pw")
-    session.add(user)
-    session.commit()
-    session.refresh(user)
 
-    token = create_access_token({"sub": user.username})
+def test_ws_unknown_character_rejected():
+    """A valid token is not enough on its own if the player_id doesn't
+    resolve to any Character at all."""
+    user, _character, game_session = _seed_user_and_character("orphan-token-user")
+    token = create_access_token(user.id)
 
-    try:
-        with client.websocket_connect(f"/ws/dummy_session/{uuid.uuid4()}?token={token}"):
+    with pytest.raises(Exception):
+        with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{uuid.uuid4()}?token={token}"):
             pass
-    except Exception:
-        pass
 
-@pytest.mark.asyncio
-async def test_ws_valid_connection(session: Session, client: TestClient):
-    user = User(username="validuser", hashed_password="pw")
-    session.add(user)
-    session.commit()
-    session.refresh(user)
 
-    char = Character(name="Hero", universe_id=uuid.uuid4(), user_id=user.id, hp=10, max_hp=10, armor_class=10, speed=30)
-    session.add(char)
-    session.commit()
-    session.refresh(char)
+def test_ws_wrong_owner_rejected():
+    """A valid token for user A trying to connect as a player_id belonging
+    to user B's character must be rejected, even though the token itself
+    verifies fine."""
+    _owner, character, game_session = _seed_user_and_character("char-owner")
+    intruder, _intruder_char, _intruder_session = _seed_user_and_character("intruder")
 
-    gs = GameSession(universe_id=char.universe_id, status=GameSessionStatus.ACTIVE)
-    session.add(gs)
-    session.commit()
-    session.refresh(gs)
+    intruder_token = create_access_token(intruder.id)
 
-    participant = SessionParticipants(character_id=char.id, session_id=gs.id)
-    session.add(participant)
-    session.commit()
-
-    token = create_access_token({"sub": user.username})
-
-    try:
-        with client.websocket_connect(f"/ws/{gs.id}/{char.id}?token={token}") as ws:
+    with pytest.raises(Exception):
+        with TestClient(app).websocket_connect(
+            f"/ws/{game_session.id}/{character.id}?token={intruder_token}"
+        ):
             pass
-    except Exception as e:
+
+
+def test_ws_valid_owner_connects():
+    """A valid token for the user who actually owns the character should be
+    accepted."""
+    user, character, game_session = _seed_user_and_character("valid-user")
+    token = create_access_token(user.id)
+
+    with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{character.id}?token={token}"):
         pass

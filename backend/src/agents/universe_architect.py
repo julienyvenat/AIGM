@@ -10,7 +10,23 @@ from src.world_builder.schemas import WorldKnowledge
 from src.engine.image_generator import generate_scene_image
 from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, GameSystem
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_client: Optional[AsyncOpenAI] = None
+
+
+def _get_client() -> AsyncOpenAI:
+    """Lazily builds the OpenAI client on first use.
+
+    Importing this module must not require OPENAI_API_KEY to be set (tests
+    mock LLM calls and should never need real credentials just to import
+    src.main), so the client is only constructed when actually needed.
+    """
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is not set.")
+        _client = AsyncOpenAI(api_key=api_key)
+    return _client
 
 async def generate_universe_from_prompt(prompt: str, game_system: GameSystem, db: AsyncSession) -> Universe:
     logging.info(f"Generating universe from prompt: {prompt}")
@@ -27,7 +43,7 @@ Extrais les PNJ (nom, faction, description), les lieux (nom, description, points
 Génère une histoire globale captivante qui servira de contexte général au monde.
 """
 
-    response = await client.beta.chat.completions.parse(
+    response = await _get_client().beta.chat.completions.parse(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -40,7 +56,7 @@ Génère une histoire globale captivante qui servira de contexte général au mo
 
     # 2. Generate Universe Name
     name_prompt = f"Génère un nom court et épique (max 3-4 mots) pour cet univers :\n\n{world_knowledge.histoire_globale}"
-    name_response = await client.chat.completions.create(
+    name_response = await _get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": name_prompt}],
         max_tokens=20

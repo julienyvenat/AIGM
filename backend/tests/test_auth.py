@@ -20,6 +20,15 @@ async def override_get_session() -> AsyncSession:
 
 app.dependency_overrides[get_session] = override_get_session
 
+@pytest.fixture(scope="module", autouse=True)
+def _clear_dependency_override_after_module():
+    # app.dependency_overrides is a global, shared across every test module in
+    # the session. Without this, the override set above at import time leaks
+    # into every test file collected after this one, silently redirecting
+    # their DB-backed dependencies to this file's throwaway in-memory engine.
+    yield
+    app.dependency_overrides.pop(get_session, None)
+
 @pytest.fixture(autouse=True)
 def setup_db():
     async def init():
@@ -49,7 +58,8 @@ def test_register_user_duplicate():
 
 def test_login_success():
     client.post("/auth/register", json={"username": "loginuser", "password": "securepassword"})
-    response = client.post("/auth/token", json={"username": "loginuser", "password": "securepassword"})
+    # /auth/token is an OAuth2PasswordRequestForm endpoint: it expects form-encoded data, not JSON.
+    response = client.post("/auth/token", data={"username": "loginuser", "password": "securepassword"})
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -57,6 +67,6 @@ def test_login_success():
 
 def test_login_failure():
     client.post("/auth/register", json={"username": "baduser", "password": "password"})
-    response = client.post("/auth/token", json={"username": "baduser", "password": "wrongpassword"})
+    response = client.post("/auth/token", data={"username": "baduser", "password": "wrongpassword"})
     assert response.status_code == 401
     assert response.json()["detail"] == "Incorrect username or password"
