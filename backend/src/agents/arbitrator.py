@@ -7,7 +7,7 @@ from google import genai
 from google.genai import types
 
 from src.engine.models import Character, GameSystem
-from src.engine.tools.dice_tool import roll_dice
+from src.engine.dice_tool import roll_dice
 
 class ArbitratorLLMOutput(BaseModel):
     action_type: str = Field(description="Type of action (attack, spell, dodge, skill_check, etc.)")
