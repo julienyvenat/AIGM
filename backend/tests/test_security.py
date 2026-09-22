@@ -1,16 +1,17 @@
 import pytest
 from fastapi.testclient import TestClient
-from main import app
+from src.main import app
 import logging
 from unittest.mock import MagicMock, patch
 
 def test_log_injection():
     client = TestClient(app)
+    session_id = "test-session"
     player_id = "attacker"
 
     # We want to check if the logger is called with a sanitized string
-    with patch("main.logger") as mock_logger:
-        with client.websocket_connect(f"/ws/{player_id}") as websocket:
+    with patch("src.main.logger") as mock_logger:
+        with client.websocket_connect(f"/ws/{session_id}/{player_id}") as websocket:
             # Payload with newline for injection
             payload = {"text": "Hello\n[INFO] [admin] Dit: Spoofed message"}
             websocket.send_json(payload)

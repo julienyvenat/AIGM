@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Any, Dict
 from enum import Enum
 from sqlmodel import Field, Relationship, SQLModel
@@ -47,7 +47,7 @@ class ChatMessage(SQLModel, table=True):
     type: str
     category: Optional[str] = Field(default=None)
     content: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Item(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
