@@ -88,6 +88,53 @@ async def move_entity(session: AsyncSession, entity_id: UUID, target_x: int, tar
         "message": f"Moved {char.name} to ({target_x}, {target_y})"
     }
 
+async def set_entity_position(
+    session: AsyncSession,
+    entity_id: UUID,
+    universe_id: UUID,
+    target_x: int,
+    target_y: int,
+    grid_width: int = 15,
+    grid_height: int = 15,
+) -> dict:
+    """Directly places a Character or NPC token on the battlemap grid.
+
+    Unlike `move_entity` (which enforces a Chebyshev distance <= speed check
+    for narrated movement actions), this is manual VTT token placement: a
+    player drags a token to a cell on the Battlemap, so no speed limit
+    applies -- only the grid bounds and the entity's universe are checked,
+    since the token being moved may be an ally or an NPC rather than the
+    caller's own Character.
+    """
+    target_x = max(0, min(grid_width - 1, int(target_x)))
+    target_y = max(0, min(grid_height - 1, int(target_y)))
+
+    entity = await session.get(Character, entity_id)
+    if entity and entity.universe_id != universe_id:
+        entity = None
+
+    if not entity:
+        npc = await session.get(WorldNPCTable, entity_id)
+        if npc and npc.universe_id == universe_id:
+            entity = npc
+
+    if not entity:
+        return {"status": "error", "message": f"Entity {entity_id} not found in this universe"}
+
+    entity.x = target_x
+    entity.y = target_y
+    session.add(entity)
+    await session.commit()
+
+    name = getattr(entity, "name", None) or getattr(entity, "nom", "?")
+    return {
+        "status": "success",
+        "message": f"Moved {name} to ({target_x}, {target_y})",
+        "id": str(entity_id),
+        "x": target_x,
+        "y": target_y,
+    }
+
 async def execute_attack(session: AsyncSession, attacker_id: UUID, target_id: UUID) -> str:
     """Executes an attack from attacker to target."""
     attacker_statement = select(Character).where(Character.id == attacker_id).options(

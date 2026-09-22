@@ -155,6 +155,11 @@ class GameSession(SQLModel, table=True):
     host_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     current_battlemap_url: Optional[str] = Field(default=None)
     game_mode: str = Field(default="NARRATIVE")
+    # Battlemap grid dimensions in cells. Defaults match the previous
+    # hardcoded 15x15 grid; /battle recomputes these from the actual spread
+    # of entities placed on the map (see main.py) instead of a fixed size.
+    grid_width: int = Field(default=15)
+    grid_height: int = Field(default=15)
 
     universe: Optional["Universe"] = Relationship(back_populates="sessions")
     participants: List[Character] = Relationship(back_populates="game_sessions", link_model=SessionParticipants)
