@@ -30,7 +30,19 @@ export function Play() {
     setCharacter(prev => prev ? { ...prev, ...updatedCharacter } as Character : updatedCharacter as Character);
   }, []);
 
-  const { isConnected, messages, sendMessage, sendAction, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
+  const {
+    isConnected,
+    messages,
+    sendMessage,
+    sendAction,
+    sendMoveEntity,
+    entities,
+    currentSceneImage,
+    clearSceneImage,
+    battlemapImageUrl,
+    gridWidth,
+    gridHeight,
+  } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
 
   useEffect(() => {
     if (!sessionId || !characterId || !token) {
@@ -146,7 +158,13 @@ export function Play() {
 
         {/* Right Column: Map/Content (2/3) */}
         <section className="w-2/3 p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
-          <BattleMap entities={entities} battlemapImageUrl={battlemapImageUrl} />
+          <BattleMap
+            entities={entities}
+            battlemapImageUrl={battlemapImageUrl}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            onMoveEntity={sendMoveEntity}
+          />
 
           {currentSceneImage && (
             <SceneViewer imageUrl={currentSceneImage} onClose={clearSceneImage} />

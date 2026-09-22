@@ -22,6 +22,10 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
   const [entities, setEntities] = useState<Entity[]>([]);
   const [currentSceneImage, setCurrentSceneImage] = useState<string | null>(null);
   const [battlemapImageUrl, setBattlemapImageUrl] = useState<string | null>(null);
+  // Battlemap grid size, driven by the backend (GameSession.grid_width/height
+  // via the combat_state message) instead of a hardcoded 15x15.
+  const [gridWidth, setGridWidth] = useState(15);
+  const [gridHeight, setGridHeight] = useState(15);
   const wsRef = useRef<WebSocket | null>(null);
   const { token } = useAuth();
   const navigate = useNavigate();
@@ -65,6 +69,12 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
 
           if (data.type === 'combat_state' && Array.isArray(data.entities)) {
             setEntities(data.entities);
+            if (typeof data.grid_width === 'number') {
+              setGridWidth(data.grid_width);
+            }
+            if (typeof data.grid_height === 'number') {
+              setGridHeight(data.grid_height);
+            }
             return;
           }
 
@@ -189,9 +199,36 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
     }
   }, []);
 
+  // Manual Battlemap token placement (drag & drop of a PC or NPC token to a
+  // new cell). Same UI_ACTION channel as sendAction above, but keyed on
+  // entity_id/x/y rather than item_id (see src/main.py's move_entity branch).
+  const sendMoveEntity = useCallback((entityId: string, x: number, y: number) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'UI_ACTION',
+        action: 'move_entity',
+        entity_id: entityId,
+        x,
+        y
+      }));
+    }
+  }, []);
+
   const clearSceneImage = useCallback(() => {
     setCurrentSceneImage(null);
   }, []);
 
-  return { isConnected, messages, sendMessage, sendAction, entities, currentSceneImage, clearSceneImage, battlemapImageUrl };
+  return {
+    isConnected,
+    messages,
+    sendMessage,
+    sendAction,
+    sendMoveEntity,
+    entities,
+    currentSceneImage,
+    clearSceneImage,
+    battlemapImageUrl,
+    gridWidth,
+    gridHeight,
+  };
 }

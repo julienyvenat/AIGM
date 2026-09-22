@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Dict, Any
 from pydantic import BaseModel
 import uuid
 
@@ -118,6 +118,11 @@ class NPCPatch(BaseModel):
     nom: str
     faction: str | None
     description: str
+    # Lightweight combat sheet (see WorldNPCTable) -- optional so existing
+    # callers that only send nom/faction/description keep working.
+    resistances: List[str] | None = None
+    vulnerabilities: List[str] | None = None
+    actions: List[Dict[str, Any]] | None = None
 
 @router.put("/npcs/{npc_id}")
 async def update_npc(npc_id: uuid.UUID, req: NPCPatch, db: AsyncSession = Depends(get_session)):
@@ -127,6 +132,12 @@ async def update_npc(npc_id: uuid.UUID, req: NPCPatch, db: AsyncSession = Depend
     npc.nom = req.nom
     npc.faction = req.faction
     npc.description = req.description
+    if req.resistances is not None:
+        npc.resistances = req.resistances
+    if req.vulnerabilities is not None:
+        npc.vulnerabilities = req.vulnerabilities
+    if req.actions is not None:
+        npc.actions = req.actions
     await db.commit()
     return npc
 

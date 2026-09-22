@@ -1,8 +1,8 @@
 import pytest
 from uuid import uuid4
 from sqlmodel import select
-from src.engine.models import Character, InventorySlot, Item, ItemType
-from src.engine.tools import execute_attack, move_entity, roll_dice
+from src.engine.models import Character, InventorySlot, Item, ItemType, WorldNPCTable
+from src.engine.tools import execute_attack, move_entity, roll_dice, set_entity_position
 
 @pytest.mark.asyncio
 async def test_execute_attack_with_weapon(db_session, monkeypatch):
@@ -114,3 +114,70 @@ async def test_move_entity_boundary(db_session):
     assert char.x == 5
     assert char.y == 5
     assert result["status"] == "success"
+
+# --- set_entity_position: manual Battlemap token drag & drop (main.py's
+# "move_entity" UI_ACTION), as opposed to move_entity's narrated,
+# speed-limited movement above. No speed check, but bounded to the grid and
+# scoped to the caller's universe. ---
+
+@pytest.mark.asyncio
+async def test_set_entity_position_moves_character_ignoring_speed(db_session):
+    universe_id = uuid4()
+    char = Character(name="Token", hp=10, max_hp=10, armor_class=10, speed=1, x=0, y=0, universe_id=universe_id)
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    # Speed is 1, but manual placement is a drag-and-drop, not a narrated
+    # move, so distance is not limited by speed.
+    result = await set_entity_position(db_session, char.id, universe_id, 12, 9, grid_width=15, grid_height=15)
+
+    await db_session.refresh(char)
+    assert result["status"] == "success"
+    assert char.x == 12
+    assert char.y == 9
+
+@pytest.mark.asyncio
+async def test_set_entity_position_moves_npc(db_session):
+    universe_id = uuid4()
+    npc = WorldNPCTable(universe_id=universe_id, nom="Gobelin", description="Un gobelin.", x=0, y=0)
+    db_session.add(npc)
+    await db_session.commit()
+    await db_session.refresh(npc)
+
+    result = await set_entity_position(db_session, npc.id, universe_id, 3, 4, grid_width=15, grid_height=15)
+
+    await db_session.refresh(npc)
+    assert result["status"] == "success"
+    assert npc.x == 3
+    assert npc.y == 4
+
+@pytest.mark.asyncio
+async def test_set_entity_position_clamps_to_grid_bounds(db_session):
+    universe_id = uuid4()
+    char = Character(name="Token", hp=10, max_hp=10, armor_class=10, speed=99, x=0, y=0, universe_id=universe_id)
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    result = await set_entity_position(db_session, char.id, universe_id, 999, -50, grid_width=20, grid_height=10)
+
+    await db_session.refresh(char)
+    assert result["status"] == "success"
+    assert char.x == 19  # grid_width - 1
+    assert char.y == 0   # clamped from -50
+
+@pytest.mark.asyncio
+async def test_set_entity_position_rejects_entity_from_other_universe(db_session):
+    char = Character(name="Token", hp=10, max_hp=10, armor_class=10, speed=30, x=0, y=0, universe_id=uuid4())
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    result = await set_entity_position(db_session, char.id, uuid4(), 5, 5)
+
+    await db_session.refresh(char)
+    assert result["status"] == "error"
+    # Position must be untouched.
+    assert char.x == 0
+    assert char.y == 0

@@ -475,7 +475,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                     from src.agents.narrator import get_combat_state
                     combat_state = await get_combat_state(session, game_session.universe_id)
                     await manager.send_personal_message(
-                        {"type": "combat_state", "entities": combat_state},
+                        {
+                            "type": "combat_state",
+                            "entities": combat_state,
+                            "grid_width": game_session.grid_width,
+                            "grid_height": game_session.grid_height,
+                        },
                         websocket
                     )
                 break
@@ -502,6 +507,69 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
             # Check for UI Actions bypassing the LLM
             if payload.get("type") == "UI_ACTION":
                 action = payload.get("action")
+
+                if action == "move_entity":
+                    # Manual token placement on the Battlemap (drag & drop of a
+                    # PC or NPC token to a new cell). Bypasses the LLM entirely,
+                    # same as the other UI_ACTIONs below, but moves any entity
+                    # in the caller's universe rather than the caller's own
+                    # inventory, so it is handled separately.
+                    import uuid
+                    from src.engine.tools import set_entity_position
+
+                    entity_id_str = payload.get("entity_id")
+                    target_x = payload.get("x")
+                    target_y = payload.get("y")
+
+                    if entity_id_str is not None and target_x is not None and target_y is not None:
+                        async for session in get_session():
+                            try:
+                                mover_stmt = select(Character).where(Character.id == uuid.UUID(player_id))
+                                mover_res = await session.execute(mover_stmt)
+                                mover = mover_res.scalars().first()
+
+                                game_session_uuid = uuid.UUID(session_id)
+                                game_session = await session.get(GameSession, game_session_uuid)
+
+                                if not mover or not game_session or mover.universe_id != game_session.universe_id:
+                                    await manager.send_personal_message(
+                                        {"type": "error", "message": "Action non autorisée."}, websocket
+                                    )
+                                    break
+
+                                result = await set_entity_position(
+                                    session,
+                                    uuid.UUID(entity_id_str),
+                                    game_session.universe_id,
+                                    target_x,
+                                    target_y,
+                                    grid_width=game_session.grid_width,
+                                    grid_height=game_session.grid_height,
+                                )
+
+                                if result.get("status") == "success":
+                                    from src.agents.narrator import get_combat_state
+                                    c_state = await get_combat_state(session, game_session.universe_id)
+                                    await manager.broadcast_to_session({
+                                        "type": "combat_state",
+                                        "entities": c_state,
+                                        "grid_width": game_session.grid_width,
+                                        "grid_height": game_session.grid_height,
+                                    }, session_id)
+                                else:
+                                    await manager.send_personal_message(
+                                        {"type": "error", "message": result.get("message", "Impossible de déplacer le pion.")},
+                                        websocket
+                                    )
+                            except Exception as e:
+                                logger.error(f"Error processing move_entity UI_ACTION: {e}")
+                                await manager.send_personal_message(
+                                    {"type": "error", "message": "Erreur lors du déplacement du pion."},
+                                    websocket
+                                )
+                            break
+                    continue
+
                 item_id_str = payload.get("item_id")
 
                 if action and item_id_str:
@@ -660,8 +728,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                     statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
-                    if char:
-                        char.game_mode = "BATTLE"
+                    # game_mode / battlemap state live on the GameSession, not the
+                    # Character (see the on-connect handler above) -- Character has
+                    # no `game_mode`/`battlemap_image_url` field.
+                    game_session = await session.get(GameSession, uuid.UUID(session_id))
+                    if char and game_session:
+                        game_session.game_mode = "BATTLE"
                         char.x = 7
                         char.y = 2
 
@@ -675,7 +747,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                             npc.y = 10
                             session.add(npc)
 
+                        # Variable grid size: derive it from the actual spread of
+                        # entities placed on the map rather than a hardcoded 15x15,
+                        # with generous padding so tokens aren't hugging the edge.
+                        placed_x = [char.x] + [5 + idx * 2 for idx in range(len(npcs))]
+                        placed_y = [char.y] + [10 for _ in npcs]
+                        game_session.grid_width = max(15, min(40, max(placed_x) + 4))
+                        game_session.grid_height = max(15, min(40, max(placed_y) + 4))
+
                         session.add(char)
+                        session.add(game_session)
                         await session.commit()
 
                         sys_msg = "The player just initiated combat. Describe the current environment and the enemies present in one short paragraph."
@@ -688,18 +769,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
         }, session_id)
 
                         # Trigger battlemap generation
-                        async def generate_and_update_battlemap(pid, desc, char_id):
+                        async def generate_and_update_battlemap(desc, gs_id):
                             bm_prompt = generate_battlemap_prompt(desc)
                             img_url = await generate_scene_image(bm_prompt)
                             if img_url:
                                 local_url = await download_image_locally(img_url, "battlemap")
                                 async for s in get_session():
-                                    st = select(Character).where(Character.id == char_id)
-                                    res = await s.execute(st)
-                                    c = res.scalars().first()
-                                    if c:
-                                        c.battlemap_image_url = local_url
-                                        s.add(c)
+                                    gs = await s.get(GameSession, gs_id)
+                                    if gs:
+                                        gs.current_battlemap_url = local_url
+                                        s.add(gs)
                                         await s.commit()
                                         await manager.broadcast_to_session({
                                             "type": "battlemap_update",
@@ -707,7 +786,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
         }, session_id)
                                     break
 
-                        task = asyncio.create_task(generate_and_update_battlemap(player_id, narrator_reply, char.id))
+                        task = asyncio.create_task(generate_and_update_battlemap(narrator_reply, game_session.id))
                         background_tasks.add(task)
                         task.add_done_callback(background_tasks.discard)
 
@@ -715,7 +794,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                         c_state = await get_combat_state(session, char.universe_id)
                         await manager.broadcast_to_session({
                             "type": "combat_state",
-                            "entities": c_state
+                            "entities": c_state,
+                            "grid_width": game_session.grid_width,
+                            "grid_height": game_session.grid_height,
         }, session_id)
                     break
                 continue
@@ -726,9 +807,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                     statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
-                    if char:
-                        char.game_mode = "NARRATIVE"
-                        char.battlemap_image_url = None
+                    game_session = await session.get(GameSession, uuid.UUID(session_id))
+                    if char and game_session:
+                        game_session.game_mode = "NARRATIVE"
+                        game_session.current_battlemap_url = None
+                        game_session.grid_width = 15
+                        game_session.grid_height = 15
 
                         npc_statement = select(WorldNPCTable).where(WorldNPCTable.universe_id == char.universe_id).where(WorldNPCTable.is_in_combat == True)
                         npc_result = await session.execute(npc_statement)
@@ -737,7 +821,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                             npc.is_in_combat = False
                             session.add(npc)
 
-                        session.add(char)
+                        session.add(game_session)
                         await session.commit()
 
                         await manager.broadcast_to_session({
@@ -750,7 +834,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
         }, session_id)
                         await manager.broadcast_to_session({
                             "type": "combat_state",
-                            "entities": []
+                            "entities": [],
+                            "grid_width": game_session.grid_width,
+                            "grid_height": game_session.grid_height,
         }, session_id)
                     break
                 continue
@@ -875,7 +961,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                     statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
-                    game_mode = char.game_mode if char else "NARRATIVE"
+                    game_session = await session.get(GameSession, uuid.UUID(session_id))
+                    game_mode = game_session.game_mode if game_session else "NARRATIVE"
                     universe_id = char.universe_id if char else None
 
                     # 2. Récupération de la mémoire RAG (Lore), filtrée par univers
@@ -889,7 +976,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                         c_state = await get_combat_state(session, char.universe_id)
                         await manager.broadcast_to_session({
                             "type": "combat_state",
-                            "entities": c_state
+                            "entities": c_state,
+                            "grid_width": game_session.grid_width if game_session else 15,
+                            "grid_height": game_session.grid_height if game_session else 15,
         }, session_id)
                     break # Une seule session suffit
 

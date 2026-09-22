@@ -110,6 +110,16 @@ class WorldNPCTable(SQLModel, table=True):
     y: int = Field(default=0)
     is_in_combat: bool = Field(default=False)
 
+    # Lightweight "combat sheet" — one notch above pure lore, still nowhere
+    # near a full Character sheet. Game-agnostic JSON fields (AGENTS.md §8):
+    # no hardcoded damage types or D&D-specific mechanics.
+    # e.g. ["feu", "poison"]
+    resistances: List[str] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    # e.g. ["froid"]
+    vulnerabilities: List[str] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    # e.g. [{"name": "Morsure", "damage": "1d6"}]
+    actions: List[Dict[str, Any]] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+
     universe: Optional["Universe"] = Relationship(back_populates="npcs")
 
 class WorldLocationTable(SQLModel, table=True):
@@ -155,6 +165,11 @@ class GameSession(SQLModel, table=True):
     host_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     current_battlemap_url: Optional[str] = Field(default=None)
     game_mode: str = Field(default="NARRATIVE")
+    # Battlemap grid dimensions in cells. Defaults match the previous
+    # hardcoded 15x15 grid; /battle recomputes these from the actual spread
+    # of entities placed on the map (see main.py) instead of a fixed size.
+    grid_width: int = Field(default=15)
+    grid_height: int = Field(default=15)
 
     universe: Optional["Universe"] = Relationship(back_populates="sessions")
     participants: List[Character] = Relationship(back_populates="game_sessions", link_model=SessionParticipants)
