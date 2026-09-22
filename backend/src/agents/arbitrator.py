@@ -1,12 +1,12 @@
 import os
 import json
-from typing import Optional
+from typing import Optional, Union
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from google import genai
 from google.genai import types
 
-from src.engine.models import Character, GameSystem
+from src.engine.models import Character, GameSystem, WorldNPCTable
 from src.engine.dice_tool import roll_dice
 
 class ArbitratorLLMOutput(BaseModel):
@@ -57,10 +57,41 @@ def define_tools():
         }
     ]
 
-async def arbitrate_action(character: Character, game_system: GameSystem, intent_text: str) -> ArbitratorResult:
+def _build_combatant_profile(entity: Union[Character, WorldNPCTable]) -> dict:
+    """Extracts a game-agnostic combat profile from either a Character or a
+    WorldNPCTable, so the arbitrator can reason about an NPC's turn the same
+    way it reasons about a player's action (AGENTS.md §8: no game-specific
+    hardcoding, everything lives in JSON-ish fields).
+
+    A WorldNPCTable is a much lighter "combat sheet" than a Character -- no
+    spells/class resources -- but it does carry `stats`-equivalent info via
+    its description plus its resistances/vulnerabilities/actions, which are
+    included here so they aren't decorative.
+    """
+    name = getattr(entity, "name", None) or getattr(entity, "nom", "Inconnu")
+    return {
+        "name": name,
+        "stats": getattr(entity, "stats", None) or {},
+        "known_spells": getattr(entity, "known_spells", None) or "[]",
+        "spell_slots": getattr(entity, "spell_slots", None) or "{}",
+        "class_resources": getattr(entity, "class_resources", None) or "{}",
+        "resistances": getattr(entity, "resistances", None) or [],
+        "vulnerabilities": getattr(entity, "vulnerabilities", None) or [],
+        "actions": getattr(entity, "actions", None) or [],
+    }
+
+
+async def arbitrate_action(character: Union[Character, WorldNPCTable], game_system: GameSystem, intent_text: str) -> ArbitratorResult:
     """
     Use an LLM to determine the success and consequences of an action, using tool calling for dice rolls.
+
+    `character` is typically the acting Character, but the profile extraction
+    below is generic enough to accept a WorldNPCTable too (e.g. for an NPC's
+    turn), since the data model (resistances/vulnerabilities/actions) is
+    meant to be usable here, not just displayed on a sheet.
     """
+    profile = _build_combatant_profile(character)
+
     # 1. Prepare system prompt dynamically
     system_prompt = f"""Tu es l'arbitre du système "{game_system.name}".
 
@@ -72,15 +103,19 @@ Règles Spécifiques (CORE RULES) :
 
 Tu ne peux valider l'action d'un joueur que s'il possède le sort dans sa liste et s'il lui reste des emplacements de sorts appropriés.
 
-Le joueur tente l'action suivante : "{intent_text}"
+L'entité "{profile['name']}" tente l'action suivante : "{intent_text}"
 
-Voici les statistiques actuelles du personnage :
-{json.dumps(character.stats, indent=2)}
+Voici les statistiques actuelles de {profile['name']} :
+{json.dumps(profile['stats'], indent=2)}
 
 Inventaire magique et ressources :
-Sorts connus: {character.known_spells}
-Emplacements de sorts (Niveau: Quantité): {character.spell_slots}
-Ressources de classe: {character.class_resources}
+Sorts connus: {profile['known_spells']}
+Emplacements de sorts (Niveau: Quantité): {profile['spell_slots']}
+Ressources de classe: {profile['class_resources']}
+
+Résistances aux dégâts: {json.dumps(profile['resistances'])}
+Vulnérabilités aux dégâts: {json.dumps(profile['vulnerabilities'])}
+Actions de combat disponibles: {json.dumps(profile['actions'])}
 
 Tu DOIS utiliser l'outil `roll_dice` si un jet de dés est requis par les règles pour cette action.
 Après avoir obtenu le résultat du jet, ou si aucun jet n'est nécessaire, génère ta réponse finale selon le schéma JSON demandé.

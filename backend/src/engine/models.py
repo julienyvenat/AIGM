@@ -110,6 +110,16 @@ class WorldNPCTable(SQLModel, table=True):
     y: int = Field(default=0)
     is_in_combat: bool = Field(default=False)
 
+    # Lightweight "combat sheet" — one notch above pure lore, still nowhere
+    # near a full Character sheet. Game-agnostic JSON fields (AGENTS.md §8):
+    # no hardcoded damage types or D&D-specific mechanics.
+    # e.g. ["feu", "poison"]
+    resistances: List[str] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    # e.g. ["froid"]
+    vulnerabilities: List[str] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    # e.g. [{"name": "Morsure", "damage": "1d6"}]
+    actions: List[Dict[str, Any]] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+
     universe: Optional["Universe"] = Relationship(back_populates="npcs")
 
 class WorldLocationTable(SQLModel, table=True):

@@ -64,7 +64,12 @@ async def get_combat_state(session: AsyncSession, universe_id: UUID) -> list[dic
             "x": npc.x,
             "y": npc.y,
             "is_pc": False,
-            "reference_portrait_url": None
+            "reference_portrait_url": None,
+            # Combat-sheet data (see WorldNPCTable) so the Arbitre can reason
+            # about an NPC's turn the same way it does for a Character.
+            "resistances": npc.resistances,
+            "vulnerabilities": npc.vulnerabilities,
+            "actions": npc.actions,
         })
     return state
 
