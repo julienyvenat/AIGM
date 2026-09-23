@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.engine.models import ChatMessage
 from sqlmodel import select, or_
 from src.agents.router import analyze_player_intent, IntentType
+from src.agents.arbitrator import arbitrate_action
 from src.agents.narrator import generate_narrator_response
 from src.memory.vector_db import get_relevant_context
 
