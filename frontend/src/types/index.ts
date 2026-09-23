@@ -24,6 +24,7 @@ export interface GameSession {
   host_id: string;
   current_battlemap_url?: string;
   game_mode: string;
+  voice_enabled: boolean;
   universe?: Universe;
 }
 
