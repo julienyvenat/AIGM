@@ -10,6 +10,15 @@ class GameSessionStatus(str, Enum):
     ACTIVE = "ACTIVE"
     ENDED = "ENDED"
 
+class GMType(str, Enum):
+    """Who holds GM authority for a GameSession: the AI narrator/arbitrator
+    pipeline (current/default behavior, unchanged), or a human participant.
+    See GameSession.gm_type and the WS handler in main.py (branches early on
+    this instead of threading conditionals through the existing AI-GM code
+    path)."""
+    AI = "AI"
+    HUMAN = "HUMAN"
+
 class ItemType(str, Enum):
     WEAPON = "WEAPON"
     ARMOR = "ARMOR"
@@ -174,6 +183,16 @@ class GameSession(SQLModel, table=True):
     # default, toggled per-session via PUT /sessions/{id}/voice. When False,
     # no TTS API calls are made at all (see background_tts_generation).
     voice_enabled: bool = Field(default=False)
+    # Who holds GM authority for this session (Phase D). Defaults to AI --
+    # the pre-existing, unchanged behavior where the narrator/arbitrator
+    # agents autonomously respond to ROLEPLAY/ACTION intent. When HUMAN,
+    # `host_id` doubles as "the human GM"'s user id: no separate
+    # `gm_user_id` field, since a mid-session GM handoff between
+    # participants was never asked for here (see AGENTS.md / phase design
+    # notes) -- keeping it this simple avoids over-engineering a transfer
+    # feature nobody requested. If that need shows up later, add a
+    # dedicated `gm_user_id` then rather than overloading `host_id` further.
+    gm_type: GMType = Field(default=GMType.AI)
 
     universe: Optional["Universe"] = Relationship(back_populates="sessions")
     participants: List[Character] = Relationship(back_populates="game_sessions", link_model=SessionParticipants)
