@@ -42,6 +42,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, sendMessage }) =
       } else if (msg.category === 'SYSTEM') {
         containerClass = 'flex mb-4 justify-center w-full';
         bubbleClass = 'text-sm text-gray-400 text-center bg-transparent border-none';
+      } else if (msg.category === 'GM') {
+        // Human GM's authoritative narration (Phase D) -- distinguishable
+        // from a player's own in-character chat below.
+        bubbleClass += 'bg-amber-900/30 border-amber-600 text-amber-100';
+      } else if (msg.category === 'PLAYER') {
+        // Another player's raw chat in a human-GM session (Phase D): no
+        // auto AI narration follows it, so it's shown as plain chat.
+        bubbleClass += 'bg-gray-800 border-gray-600 text-gray-300';
       } else {
         // Default narrator or other server messages
         bubbleClass += 'bg-gray-800 border-gray-600 text-gray-200';
@@ -51,6 +59,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ messages, sendMessage }) =
     return (
       <div key={msg.id || index} className={containerClass}>
         <div className={bubbleClass}>
+          {msg.category === 'GM' && (
+            <div className="text-[10px] uppercase tracking-wide text-amber-400 font-bold mb-1">MJ</div>
+          )}
           {msg.message}
         </div>
       </div>

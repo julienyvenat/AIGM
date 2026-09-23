@@ -26,7 +26,7 @@ from src.agents.image_prompter import generate_image_prompt
 from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
 from src.engine.audio_generator import generate_speech_audio
-from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
+from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe, GMType
 from src.engine.services.character_service import validate_character_stats, SchemaValidationError
 from src.auth.deps import get_current_user, get_user_from_token
 
@@ -186,6 +186,10 @@ async def get_characters(current_user: User = Depends(get_current_user), db: Asy
 
 class SessionCreate(BaseModel):
     universe_id: str
+    # Who holds GM authority for this session: "AI" (default, current/
+    # existing autonomous narrator+arbitrator behavior) or "HUMAN" (the
+    # creator -- host_id -- becomes the human GM; see GameSession.gm_type).
+    gm_type: str = "AI"
 
 @app.post("/sessions/")
 async def create_session(session_data: SessionCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
@@ -195,11 +199,17 @@ async def create_session(session_data: SessionCreate, current_user: User = Depen
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid universe_id format")
 
+    try:
+        gm_type = GMType(session_data.gm_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid gm_type: must be 'AI' or 'HUMAN'")
+
     from src.engine.models import GameSessionStatus
     game_session = GameSession(
         universe_id=universe_id,
         host_id=current_user.id,
-        status=GameSessionStatus.LOBBY
+        status=GameSessionStatus.LOBBY,
+        gm_type=gm_type,
     )
     db.add(game_session)
     await db.commit()
@@ -554,10 +564,156 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                 )
                 continue
 
+            # --- GM authority (Phase D) ---
+            # Looked up once per message and reused below to gate GM-only
+            # actions (/battle, /endbattle, the gm_consult_*/gm_generate_scene
+            # UI_ACTIONs) and to branch the narration pipeline just before
+            # intent analysis. Computing it here -- instead of threading a
+            # conditional through every existing line below -- keeps the
+            # AI-GM code path (game_session_gm_type == GMType.AI, the
+            # default) completely untouched: `is_session_gm` is always False
+            # for it, so every gate below is a no-op and every branch below
+            # falls through to the pre-existing behavior unchanged.
+            import uuid as _uuid_gm_check
+            game_session_gm_type = GMType.AI
+            is_session_gm = False
+            async for session in get_session():
+                try:
+                    _gs_for_gm_check = await session.get(GameSession, _uuid_gm_check.UUID(session_id))
+                except ValueError:
+                    _gs_for_gm_check = None
+                if _gs_for_gm_check:
+                    game_session_gm_type = _gs_for_gm_check.gm_type
+                    is_session_gm = (
+                        game_session_gm_type == GMType.HUMAN
+                        and _gs_for_gm_check.host_id == authorized_user.id
+                    )
+                break
 
             # Check for UI Actions bypassing the LLM
             if payload.get("type") == "UI_ACTION":
                 action = payload.get("action")
+
+                if action in ("gm_consult_narrator", "gm_consult_arbitrator", "gm_generate_scene"):
+                    # --- Human-GM on-demand AI consultation (Phase D) ---
+                    # These give a human GM the same underlying AI
+                    # capabilities the AI-GM path uses autonomously
+                    # (narrator prose, arbitrator dice/outcome resolution,
+                    # scene-image generation), but as an advisory tool the
+                    # GM explicitly calls -- never auto-broadcast as the
+                    # authoritative outcome. Only the session's human GM may
+                    # use them (same "only GM" authorization as /battle
+                    # below), and only in a HUMAN-GM session (they'd be
+                    # redundant in an AI-GM one, which already narrates
+                    # autonomously).
+                    if not is_session_gm:
+                        await manager.send_personal_message(
+                            {"type": "error", "message": "Seul le MJ humain de cette session peut faire ça."},
+                            websocket
+                        )
+                        continue
+
+                    if action == "gm_consult_narrator":
+                        situation_text = payload.get("text", "")
+                        async for session in get_session():
+                            game_session = await session.get(GameSession, _uuid_gm_check.UUID(session_id))
+                            game_mode = game_session.game_mode if game_session else "NARRATIVE"
+                            try:
+                                suggestion = await generate_narrator_response(
+                                    session, player_id, situation_text, game_mode=game_mode
+                                )
+                            except Exception as e:
+                                logger.error(f"Erreur gm_consult_narrator: {e}")
+                                suggestion = None
+                            break
+
+                        if suggestion is not None:
+                            # Personal message only -- advisory, not broadcast.
+                            await manager.send_personal_message(
+                                {"type": "gm_advisory", "advisory_type": "narrator", "message": suggestion},
+                                websocket
+                            )
+                        else:
+                            await manager.send_personal_message(
+                                {"type": "error", "message": "Le narrateur n'a pas pu générer de suggestion."},
+                                websocket
+                            )
+                        continue
+
+                    if action == "gm_consult_arbitrator":
+                        # Advisory arbitration for ANY entity in the universe
+                        # (the acting Character, or a WorldNPCTable -- e.g.
+                        # to resolve an NPC's combat turn), by entity_id.
+                        # Returns the ArbitratorResult as-is: it is never
+                        # applied to HP/resources automatically, unlike the
+                        # AI-GM ACTION-intent pipeline in main.py below --
+                        # the human GM decides what to actually apply.
+                        entity_id_str = payload.get("entity_id")
+                        action_text = payload.get("text", "")
+                        arb_result = None
+                        arb_error = None
+                        async for session in get_session():
+                            game_session = await session.get(GameSession, _uuid_gm_check.UUID(session_id))
+                            entity = None
+                            try:
+                                entity_uuid = _uuid_gm_check.UUID(entity_id_str) if entity_id_str else None
+                            except ValueError:
+                                entity_uuid = None
+                            if entity_uuid and game_session:
+                                char_res = await session.execute(select(Character).where(Character.id == entity_uuid))
+                                entity = char_res.scalars().first()
+                                if not entity:
+                                    npc_res = await session.execute(select(WorldNPCTable).where(WorldNPCTable.id == entity_uuid))
+                                    entity = npc_res.scalars().first()
+
+                            if not entity or not game_session or entity.universe_id != game_session.universe_id:
+                                arb_error = "Entité introuvable dans cette session."
+                                break
+
+                            uni = await session.get(Universe, game_session.universe_id)
+                            game_system = await session.get(GameSystem, uni.game_system_id) if uni and uni.game_system_id else None
+                            if not game_system:
+                                gs_result = await session.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
+                                game_system = gs_result.scalars().first()
+                            if not game_system:
+                                arb_error = "Aucun système de jeu configuré pour cet univers."
+                                break
+
+                            arb_result = await arbitrate_action(entity, game_system, action_text)
+                            break
+
+                        if arb_error:
+                            await manager.send_personal_message({"type": "error", "message": arb_error}, websocket)
+                        else:
+                            await manager.send_personal_message(
+                                {
+                                    "type": "gm_advisory",
+                                    "advisory_type": "arbitrator",
+                                    "result": {
+                                        "action_type": arb_result.action_type,
+                                        "narrative": arb_result.narrative,
+                                        "success": arb_result.success,
+                                        "hp_change": arb_result.hp_change,
+                                        "consumed_resource_type": arb_result.consumed_resource_type,
+                                        "consumed_resource_name": arb_result.consumed_resource_name,
+                                    },
+                                },
+                                websocket
+                            )
+                        continue
+
+                    if action == "gm_generate_scene":
+                        # Manually trigger the same scene-image pipeline the
+                        # AI-GM path fires automatically off a narrator
+                        # reply (background_image_generation) -- broadcasts
+                        # `scene_image` to everyone once ready, same as
+                        # before, but here the human GM is the one deciding
+                        # a scene is worth illustrating.
+                        description = payload.get("description", "")
+                        task = asyncio.create_task(background_image_generation(player_id, description, manager, session_id))
+                        background_tasks.add(task)
+                        task.add_done_callback(background_tasks.discard)
+                        continue
 
                 if action == "move_entity":
                     # Manual token placement on the Battlemap (drag & drop of a
@@ -768,12 +924,25 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
             sanitized_player_text = str(player_text).replace('\n', '\\n').replace('\r', '\\r')
             logger.info(f"[{sanitized_player_id}] Dit: {sanitized_player_text}")
 
-            # Save player message (background)
-            task = asyncio.create_task(save_chat_message_background(player_id, "user", "chat", player_text))
+            # Save player message (background). In a HUMAN-GM session, the
+            # GM's own chat message IS the table's authoritative narration
+            # (see the pre-intent-analysis branch below) -- persist it with
+            # a distinguishing sender/type/category so a reconnect's chat
+            # history replay renders it the same way live clients see it.
+            if game_session_gm_type == GMType.HUMAN and is_session_gm:
+                task = asyncio.create_task(save_chat_message_background(player_id, "gm", "narrator", player_text, "GM"))
+            else:
+                task = asyncio.create_task(save_chat_message_background(player_id, "user", "chat", player_text))
             background_tasks.add(task)
             task.add_done_callback(background_tasks.discard)
 
             if player_text.strip() == "/battle":
+                if game_session_gm_type == GMType.HUMAN and not is_session_gm:
+                    await manager.send_personal_message(
+                        {"type": "error", "message": "Seul le MJ peut déclencher le mode combat dans une session à MJ humain."},
+                        websocket
+                    )
+                    continue
                 import uuid
                 async for session in get_session():
                     statement = select(Character).where(Character.id == uuid.UUID(player_id))
@@ -853,6 +1022,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                 continue
 
             if player_text.strip() == "/endbattle":
+                if game_session_gm_type == GMType.HUMAN and not is_session_gm:
+                    await manager.send_personal_message(
+                        {"type": "error", "message": "Seul le MJ peut mettre fin au combat dans une session à MJ humain."},
+                        websocket
+                    )
+                    continue
                 import uuid
                 async for session in get_session():
                     statement = select(Character).where(Character.id == uuid.UUID(player_id))
@@ -890,6 +1065,40 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                             "grid_height": game_session.grid_height,
         }, session_id)
                     break
+                continue
+
+            # --- HUMAN-GM narration branch (Phase D) ---
+            # In a HUMAN-GM session, the AI never autonomously narrates or
+            # arbitrates outcomes (the human GM does, using their own chat
+            # messages as authoritative narration and the gm_consult_*
+            # UI_ACTIONs above as an on-demand advisory tool). This branches
+            # BEFORE intent analysis so the entire ROLEPLAY/ACTION/SYSTEM
+            # pipeline below -- the AI-GM path -- is completely untouched
+            # and still runs exactly as before for game_session_gm_type ==
+            # GMType.AI (the default).
+            if game_session_gm_type == GMType.HUMAN:
+                if is_session_gm:
+                    # The GM's own message is the table's official outcome:
+                    # broadcast with a distinguishing marker instead of
+                    # running it through the AI pipeline.
+                    await manager.broadcast_to_session({
+                        "type": "narrator",
+                        "category": "GM",
+                        "message": player_text,
+                        "role": "gm",
+                    }, session_id)
+                else:
+                    # Regular player chat: still broadcast to everyone
+                    # (including the GM) so the table can see what was
+                    # said/typed, but no AI narration/arbitration follows --
+                    # the human GM decides what happens next.
+                    await manager.broadcast_to_session({
+                        "type": "chat",
+                        "category": "PLAYER",
+                        "message": player_text,
+                        "role": "player",
+                        "player_id": player_id,
+                    }, session_id)
                 continue
 
             # 2. Analyse de l'intention
