@@ -1,0 +1,106 @@
+# AIGM production deployment (NAS, self-hosted, behind the existing
+# Traefik reverse proxy). See DEPLOY.md for one-time setup and update
+# instructions.
+#
+# This is a SEPARATE compose file from the owner's shared
+# /home/julieny/docker/docker-compose.yml (Traefik itself, other
+# services) -- do not merge into it. `net-multimedia` is that stack's
+# existing external Docker network; Traefik is already attached to it and
+# listening on 80/443.
+#
+# Deploy is manual, on purpose: `docker compose -f docker-compose.prod.yml
+# pull && docker compose -f docker-compose.prod.yml up -d`. No
+# auto-deploy/CI trigger exists for this file.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aigm
+      POSTGRES_USER: aigm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.production}
+    volumes:
+      - aigm-postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    # Deliberately NOT on net-multimedia and no `ports:` mapping -- only
+    # reachable by the backend service on the internal network, never
+    # exposed to the host or the internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aigm -d aigm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/julienyvenat/aigm-backend:latest}
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aigm:${POSTGRES_PASSWORD}@postgres:5432/aigm
+    volumes:
+      - aigm-backend-images:/app/backend/backend/images
+      - aigm-backend-audio:/app/backend/backend/audio
+      - aigm-chroma-data:/app/chroma_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+      - net-multimedia
+    labels:
+      traefik.enable: "true"
+      traefik.http.services.aigm-backend.loadbalancer.server.port: "8000"
+      traefik.http.routers.aigm-backend.rule: "Host(`api.jdr.yvenat.eu`)"
+      traefik.http.middlewares.aigm-backend-https.redirectscheme.scheme: "https"
+      traefik.http.routers.aigm-backend-http.rule: "Host(`api.jdr.yvenat.eu`)"
+      traefik.http.routers.aigm-backend-http.middlewares: "aigm-backend-https@docker"
+      traefik.http.routers.aigm-backend.entrypoints: "web-secure"
+      traefik.http.routers.aigm-backend.tls: "true"
+      traefik.http.routers.aigm-backend.tls.certresolver: "default"
+      traefik.docker.network: "net-multimedia"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/julienyvenat/aigm-frontend:latest}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: https://api.jdr.yvenat.eu
+        VITE_WS_URL: wss://api.jdr.yvenat.eu
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - net-multimedia
+    labels:
+      traefik.enable: "true"
+      traefik.http.services.aigm-frontend.loadbalancer.server.port: "80"
+      traefik.http.routers.aigm-frontend.rule: "Host(`jdr.yvenat.eu`)"
+      traefik.http.middlewares.aigm-frontend-https.redirectscheme.scheme: "https"
+      traefik.http.routers.aigm-frontend-http.rule: "Host(`jdr.yvenat.eu`)"
+      traefik.http.routers.aigm-frontend-http.middlewares: "aigm-frontend-https@docker"
+      traefik.http.routers.aigm-frontend.entrypoints: "web-secure"
+      traefik.http.routers.aigm-frontend.tls: "true"
+      traefik.http.routers.aigm-frontend.tls.certresolver: "default"
+      traefik.docker.network: "net-multimedia"
+
+networks:
+  # Existing Traefik-reachable network from the owner's shared stack.
+  # Never created/recreated here.
+  net-multimedia:
+    external: true
+  # Postgres <-> backend only, not routed anywhere else.
+  internal:
+    driver: bridge
+
+volumes:
+  aigm-postgres-data:
+  aigm-backend-images:
+  aigm-backend-audio:
+  aigm-chroma-data:

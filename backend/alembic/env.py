@@ -24,6 +24,15 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Same env-var-driven DB choice as the app itself (src/engine/database.py):
+# DATABASE_URL, when set, overrides alembic.ini's sqlite default so
+# migrations run against whatever DB the app is actually configured for
+# (e.g. Postgres in production) without needing a separate alembic.ini per
+# environment.
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
+
 # add your model's MetaData object here
 # for 'autogenerate' support
 from sqlalchemy import MetaData

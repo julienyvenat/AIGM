@@ -11,6 +11,7 @@ from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from src.world_builder.world_router import router as world_router
 from src.auth.router import auth_router
+from src.config import get_cors_origins
 
 from src.engine.database import init_db, get_session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -316,10 +317,16 @@ async def set_voice_enabled(session_id: str, request: VoiceToggleRequest, curren
     await db.commit()
     await db.refresh(game_session)
     return {"status": "success", "voice_enabled": game_session.voice_enabled}
-# Configuration CORS pour autoriser toutes les origines (développement local)
+# Configuration CORS : liste d'origines autorisées pilotée par la variable
+# d'environnement CORS_ORIGINS (une ou plusieurs origines séparées par des
+# virgules, ex: "https://jdr.yvenat.eu"). Sans cette variable (dev local), on
+# retombe sur une liste restreinte à localhost -- jamais de wildcard "*" en
+# association avec allow_credentials=True (interdit par la spec CORS de
+# toute façon, et surtout pas ce qu'on veut en production).
+allowed_origins = get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
