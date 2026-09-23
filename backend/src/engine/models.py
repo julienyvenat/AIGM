@@ -170,6 +170,10 @@ class GameSession(SQLModel, table=True):
     # of entities placed on the map (see main.py) instead of a fixed size.
     grid_width: int = Field(default=15)
     grid_height: int = Field(default=15)
+    # Opt-in text-to-speech (OpenAI TTS costs money per call): False by
+    # default, toggled per-session via PUT /sessions/{id}/voice. When False,
+    # no TTS API calls are made at all (see background_tts_generation).
+    voice_enabled: bool = Field(default=False)
 
     universe: Optional["Universe"] = Relationship(back_populates="sessions")
     participants: List[Character] = Relationship(back_populates="game_sessions", link_model=SessionParticipants)
