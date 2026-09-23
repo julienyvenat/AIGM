@@ -1,0 +1,31 @@
+.git
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+venv
+*.egg-info
+
+# Node
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Dev/test database fixtures — never ship into images
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets — never ship into images (compose passes real config via env_file)
+.env
+.env.*
+!.env.production.example
+
+# Misc
+.DS_Store
+*.log
