@@ -24,6 +24,7 @@ from src.agents.scene_editor import analyze_scene, ImageDecision
 from src.agents.image_prompter import generate_image_prompt
 from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
+from src.engine.audio_generator import generate_speech_audio
 from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
 from src.engine.services.character_service import validate_character_stats, SchemaValidationError
 from src.auth.deps import get_current_user, get_user_from_token
@@ -76,6 +77,25 @@ async def background_image_generation(player_id: str, description: str, manager:
         logger.error(f"Erreur dans background_image_generation: {e}")
 
 
+async def background_tts_generation(text: str, manager: "ConnectionManager", session_id: str, source: str = "narrator"):
+    """Génère l'audio (TTS) d'une réplique du Narrateur/PNJ en arrière-plan et
+    diffuse son URL une fois prête, même pattern que background_image_generation
+    ci-dessus. N'est appelée que si GameSession.voice_enabled est True (voir
+    l'appelant) : aucun appel API ni coût si l'utilisateur n'a pas activé la voix."""
+    try:
+        audio_url = await generate_speech_audio(text, filename_prefix=source)
+
+        if audio_url:
+            logger.info(f"Audio TTS généré avec succès: {audio_url}")
+            await manager.broadcast_to_session({
+                "type": "audio_ready",
+                "url": audio_url,
+                "source": source,
+            }, session_id)
+    except Exception as e:
+        logger.error(f"Erreur dans background_tts_generation: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Démarrage
@@ -92,6 +112,8 @@ import os
 from fastapi.staticfiles import StaticFiles
 os.makedirs("backend/images", exist_ok=True)
 app.mount("/images", StaticFiles(directory="backend/images"), name="images")
+os.makedirs("backend/audio", exist_ok=True)
+app.mount("/audio", StaticFiles(directory="backend/audio"), name="audio")
 
 class CharacterCreate(BaseModel):
     name: str
@@ -255,6 +277,34 @@ async def join_session(session_id: str, join_req: JoinSessionRequest, current_us
         await db.commit()
 
     return {"status": "success", "message": "Joined session successfully"}
+
+class VoiceToggleRequest(BaseModel):
+    voice_enabled: bool
+
+@app.put("/sessions/{session_id}/voice")
+async def set_voice_enabled(session_id: str, request: VoiceToggleRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    """Active/désactive la narration vocale (TTS OpenAI) pour une session.
+    Désactivé par défaut (coût par appel API) -- voir GameSession.voice_enabled.
+    Seul l'hôte de la session peut la basculer, même convention que les autres
+    routes de session (mêmes checks de propriété que /characters/{id}/set-reference)."""
+    import uuid
+    try:
+        s_id = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+    game_session = await db.get(GameSession, s_id)
+    if not game_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if game_session.host_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not the host of this session")
+
+    game_session.voice_enabled = request.voice_enabled
+    db.add(game_session)
+    await db.commit()
+    await db.refresh(game_session)
+    return {"status": "success", "voice_enabled": game_session.voice_enabled}
 # Configuration CORS pour autoriser toutes les origines (développement local)
 app.add_middleware(
     CORSMiddleware,
@@ -1006,6 +1056,17 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
+
+                # 8. TTS: opt-in per session (GameSession.voice_enabled, default
+                # False) -- costs a real OpenAI API call per narrator reply, so
+                # skip entirely (no call, no cost) unless explicitly enabled.
+                # narrator.py doesn't currently distinguish narration prose from
+                # quoted NPC dialogue, so the whole reply is voiced as one clip
+                # (source="narrator"); see audio_generator.py.
+                if game_session is not None and game_session.voice_enabled:
+                    task = asyncio.create_task(background_tts_generation(narrator_reply, manager, session_id, source="narrator"))
+                    background_tasks.add(task)
+                    task.add_done_callback(background_tasks.discard)
 
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
