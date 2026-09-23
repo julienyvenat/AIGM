@@ -5,7 +5,10 @@ import { useNavigate } from 'react-router-dom';
 
 export type SenderType = 'user' | 'server';
 export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image' | 'battlemap_update' | 'audio_ready';
-export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE';
+// 'GM' / 'PLAYER': a human-GM session's narration (see Phase D) -- the GM's
+// own chat is broadcast as `narrator`/`GM` (authoritative), a regular
+// player's chat as `chat`/`PLAYER` (not auto-narrated by the AI).
+export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE' | 'GM' | 'PLAYER';
 
 export interface GameMessage {
   id: string;
@@ -16,12 +19,30 @@ export interface GameMessage {
   timestamp?: string;
 }
 
-export function useGameWebSocket(playerId: string | null, sessionId: string | null, onStatsUpdate?: (character: Record<string, unknown>) => void) {
+// Result of a human GM's on-demand, advisory-only AI consultation (Phase D):
+// never auto-broadcast, only ever sent back to the GM who asked.
+export interface GmAdvisory {
+  advisoryType: 'narrator' | 'arbitrator';
+  message?: string;
+  result?: {
+    action_type: string;
+    narrative: string;
+    success: boolean;
+    hp_change: number;
+    consumed_resource_type: string | null;
+    consumed_resource_name: string | null;
+  };
+}
+
+export function useGameWebSocket(playerId: string | null, sessionId: string | null, onStatsUpdate?: (character: Record<string, unknown>) => void, isGm = false) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<GameMessage[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [currentSceneImage, setCurrentSceneImage] = useState<string | null>(null);
   const [battlemapImageUrl, setBattlemapImageUrl] = useState<string | null>(null);
+  // Latest advisory response to a GM's on-demand consult (Phase D) --
+  // personal-only, never appended to `messages`.
+  const [gmAdvisory, setGmAdvisory] = useState<GmAdvisory | null>(null);
   // Battlemap grid size, driven by the backend (GameSession.grid_width/height
   // via the combat_state message) instead of a hardcoded 15x15.
   const [gridWidth, setGridWidth] = useState(15);
@@ -97,6 +118,27 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
               message: "Le MJ a partagé une vision...",
             };
             setMessages((prev) => [...prev, systemMessage]);
+            return;
+          }
+
+          // Skip echoing our own broadcast back as a second bubble: the
+          // sender already shows it optimistically (see sendMessage below).
+          // Regular player chat is de-duped per-sender via player_id; the
+          // GM's authoritative narration carries no player_id (a session
+          // has one GM), so the GM client de-dupes it via `isGm` instead.
+          if (data.type === 'chat' && data.player_id && data.player_id === playerId) {
+            return;
+          }
+          if (data.type === 'narrator' && data.category === 'GM' && isGm) {
+            return;
+          }
+
+          if (data.type === 'gm_advisory') {
+            setGmAdvisory({
+              advisoryType: data.advisory_type,
+              message: data.message,
+              result: data.result,
+            });
             return;
           }
 
@@ -180,7 +222,7 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
         wsRef.current = null;
       }
     };
-  }, [playerId, sessionId, token, navigate, onStatsUpdate]);
+  }, [playerId, sessionId, token, navigate, onStatsUpdate, isGm]);
 
   const sendMessage = useCallback((text: string) => {
     if (!text.trim()) return;
@@ -234,6 +276,31 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
     setCurrentSceneImage(null);
   }, []);
 
+  // Human-GM on-demand AI consultation (Phase D): advisory only, backend
+  // rejects these unless the caller is the session's GM in a HUMAN-GM
+  // session (see gm_consult_narrator/gm_consult_arbitrator in main.py).
+  const sendGmConsultNarrator = useCallback((text: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'UI_ACTION', action: 'gm_consult_narrator', text }));
+    }
+  }, []);
+
+  const sendGmConsultArbitrator = useCallback((entityId: string, text: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'UI_ACTION', action: 'gm_consult_arbitrator', entity_id: entityId, text }));
+    }
+  }, []);
+
+  const sendGmGenerateScene = useCallback((description: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'UI_ACTION', action: 'gm_generate_scene', description }));
+    }
+  }, []);
+
+  const clearGmAdvisory = useCallback(() => {
+    setGmAdvisory(null);
+  }, []);
+
   return {
     isConnected,
     messages,
@@ -246,5 +313,10 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
     battlemapImageUrl,
     gridWidth,
     gridHeight,
+    gmAdvisory,
+    clearGmAdvisory,
+    sendGmConsultNarrator,
+    sendGmConsultArbitrator,
+    sendGmGenerateScene,
   };
 }

@@ -25,6 +25,10 @@ export interface GameSession {
   current_battlemap_url?: string;
   game_mode: string;
   voice_enabled: boolean;
+  // "AI" (default): the narrator/arbitrator agents autonomously drive the
+  // session, as before. "HUMAN": host_id is the human GM -- the AI never
+  // auto-narrates/auto-arbitrates, see Play.tsx's GM panel.
+  gm_type: 'AI' | 'HUMAN';
   universe?: Universe;
 }
 

@@ -26,10 +26,24 @@ export function Play() {
   const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [voiceToggleLoading, setVoiceToggleLoading] = useState(false);
+  const [gmNarratorPrompt, setGmNarratorPrompt] = useState('');
+  const [gmArbitratorEntityId, setGmArbitratorEntityId] = useState('');
+  const [gmArbitratorPrompt, setGmArbitratorPrompt] = useState('');
+  const [gmSceneDescription, setGmSceneDescription] = useState('');
 
   const handleStatsUpdate = useCallback((updatedCharacter: Partial<Character>) => {
     setCharacter(prev => prev ? { ...prev, ...updatedCharacter } as Character : updatedCharacter as Character);
   }, []);
+
+  // Only the session host can toggle voice on/off (enforced backend-side by
+  // PUT /sessions/{id}/voice, host_id check) -- this costs a real OpenAI TTS
+  // API call per narrator reply once enabled, so it isn't exposed as a
+  // free-for-all switch.
+  const isHost = !!user?.sub && !!sessionContext?.host_id && String(sessionContext.host_id) === String(user.sub);
+  // The human GM of a HUMAN-GM session (Phase D) -- gates the on-demand
+  // AI-consultation panel below, mirroring the backend's own
+  // `is_session_gm` check in main.py.
+  const isGm = isHost && sessionContext?.gm_type === 'HUMAN';
 
   const {
     isConnected,
@@ -43,7 +57,12 @@ export function Play() {
     battlemapImageUrl,
     gridWidth,
     gridHeight,
-  } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
+    gmAdvisory,
+    clearGmAdvisory,
+    sendGmConsultNarrator,
+    sendGmConsultArbitrator,
+    sendGmGenerateScene,
+  } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate, isGm);
 
   useEffect(() => {
     if (!sessionId || !characterId || !token) {
@@ -101,12 +120,6 @@ export function Play() {
     setShowCharacterManager(false);
     setActivePlayerId(updatedCharacter.id);
   };
-
-  // Only the session host can toggle voice on/off (enforced backend-side by
-  // PUT /sessions/{id}/voice, host_id check) -- this costs a real OpenAI TTS
-  // API call per narrator reply once enabled, so it isn't exposed as a
-  // free-for-all switch.
-  const isHost = !!user?.sub && !!sessionContext?.host_id && String(sessionContext.host_id) === String(user.sub);
 
   const handleToggleVoice = async () => {
     if (!sessionId || !sessionContext || !token) return;
@@ -210,7 +223,7 @@ export function Play() {
       {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Chat (1/3) */}
-        <section className="w-1/3 border-r border-gray-700 bg-gray-800/50 relative">
+        <section className="w-1/3 border-r border-gray-700 bg-gray-800/50 relative flex flex-col">
            {!isConnected ? (
               <div className="absolute inset-0 flex items-center justify-center p-4">
                  <div className="text-center text-gray-500 italic">
@@ -218,7 +231,124 @@ export function Play() {
                  </div>
               </div>
            ) : (
-             <ChatPanel messages={messages} sendMessage={sendMessage} />
+             <>
+               <div className="flex-1 min-h-0">
+                 <ChatPanel messages={messages} sendMessage={sendMessage} />
+               </div>
+
+               {/* Human-GM on-demand AI consultation tools (Phase D). Only
+                   the GM sees this -- advisory only, never auto-broadcast:
+                   see gm_consult_narrator/gm_consult_arbitrator in main.py. */}
+               {isGm && (
+                 <div className="shrink-0 max-h-64 overflow-y-auto border-t border-amber-700/50 bg-gray-900/80 p-3 text-sm space-y-3">
+                   <div className="text-amber-400 font-bold text-xs uppercase tracking-wide">Outils MJ (consultation IA, non diffusée)</div>
+
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       value={gmNarratorPrompt}
+                       onChange={(e) => setGmNarratorPrompt(e.target.value)}
+                       placeholder="Décrire la scène à faire suggérer par le Narrateur..."
+                       className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <button
+                       type="button"
+                       disabled={!gmNarratorPrompt.trim()}
+                       onClick={() => { sendGmConsultNarrator(gmNarratorPrompt); setGmNarratorPrompt(''); }}
+                       className="px-2 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 rounded text-xs font-medium"
+                     >
+                       Narrateur
+                     </button>
+                   </div>
+
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       list="gm-entity-ids"
+                       value={gmArbitratorEntityId}
+                       onChange={(e) => setGmArbitratorEntityId(e.target.value)}
+                       placeholder="ID entité (PJ/PNJ)"
+                       className="w-28 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <datalist id="gm-entity-ids">
+                       {entities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                     </datalist>
+                     <input
+                       type="text"
+                       value={gmArbitratorPrompt}
+                       onChange={(e) => setGmArbitratorPrompt(e.target.value)}
+                       placeholder="Action à arbitrer (ex: attaque au corps à corps)"
+                       className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <button
+                       type="button"
+                       disabled={!gmArbitratorEntityId.trim() || !gmArbitratorPrompt.trim()}
+                       onClick={() => { sendGmConsultArbitrator(gmArbitratorEntityId, gmArbitratorPrompt); setGmArbitratorPrompt(''); }}
+                       className="px-2 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 rounded text-xs font-medium"
+                     >
+                       Arbitre
+                     </button>
+                   </div>
+
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       value={gmSceneDescription}
+                       onChange={(e) => setGmSceneDescription(e.target.value)}
+                       placeholder="Décrire l'image de scène à générer..."
+                       className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <button
+                       type="button"
+                       disabled={!gmSceneDescription.trim()}
+                       onClick={() => { sendGmGenerateScene(gmSceneDescription); setGmSceneDescription(''); }}
+                       className="px-2 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 rounded text-xs font-medium"
+                     >
+                       Générer scène
+                     </button>
+                   </div>
+
+                   {gmAdvisory && (
+                     <div className="bg-gray-800 border border-amber-700/50 rounded p-2">
+                       <div className="flex justify-between items-start gap-2">
+                         <span className="text-[10px] uppercase text-amber-400 font-bold">
+                           Suggestion ({gmAdvisory.advisoryType === 'narrator' ? 'Narrateur' : 'Arbitre'})
+                         </span>
+                         <button type="button" onClick={clearGmAdvisory} className="text-gray-500 hover:text-gray-300 text-xs">✕</button>
+                       </div>
+                       {gmAdvisory.advisoryType === 'narrator' ? (
+                         <>
+                           <p className="text-gray-200 text-xs mt-1">{gmAdvisory.message}</p>
+                           <button
+                             type="button"
+                             onClick={() => gmAdvisory.message && sendMessage(gmAdvisory.message)}
+                             className="mt-2 px-2 py-1 bg-emerald-700 hover:bg-emerald-600 rounded text-xs font-medium"
+                           >
+                             Envoyer aux joueurs comme narration officielle
+                           </button>
+                         </>
+                       ) : (
+                         gmAdvisory.result && (
+                           <div className="text-gray-200 text-xs mt-1 space-y-0.5">
+                             <p>{gmAdvisory.result.narrative}</p>
+                             <p className="text-gray-400">
+                               Succès : {gmAdvisory.result.success ? 'oui' : 'non'} · PV : {gmAdvisory.result.hp_change}
+                             </p>
+                             <button
+                               type="button"
+                               onClick={() => sendMessage(gmAdvisory.result!.narrative)}
+                               className="mt-2 px-2 py-1 bg-emerald-700 hover:bg-emerald-600 rounded text-xs font-medium"
+                             >
+                               Envoyer aux joueurs comme résolution officielle
+                             </button>
+                           </div>
+                         )
+                       )}
+                     </div>
+                   )}
+                 </div>
+               )}
+             </>
            )}
         </section>
 
