@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 
 export type SenderType = 'user' | 'server';
-export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image' | 'battlemap_update';
+export type MessageType = 'narrator' | 'system' | 'error' | 'chat' | 'combat_state' | 'scene_image' | 'battlemap_update' | 'audio_ready';
 export type MessageCategory = 'ROLEPLAY' | 'ACTION' | 'SYSTEM' | 'IGNORE';
 
 export interface GameMessage {
@@ -102,6 +102,22 @@ export function useGameWebSocket(playerId: string | null, sessionId: string | nu
 
           if (data.type === 'battlemap_update') {
             setBattlemapImageUrl(data.url);
+            return;
+          }
+
+          if (data.type === 'audio_ready' && data.url) {
+            // Narration/NPC dialogue TTS clip is ready: play it immediately
+            // with the plain HTML5 Audio API (no library needed for a first
+            // version). Same URL-prefixing convention as BattleMap's
+            // battlemap image (backend-served static file, separate origin
+            // in dev).
+            const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            try {
+              const audio = new Audio(`${baseUrl}${data.url}`);
+              audio.play().catch((err) => console.error('Failed to play narration audio:', err));
+            } catch (err) {
+              console.error('Failed to play narration audio:', err);
+            }
             return;
           }
 

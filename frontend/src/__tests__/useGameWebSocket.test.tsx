@@ -48,9 +48,22 @@ function wrapper({ children }: { children: ReactNode }) {
   );
 }
 
+class MockAudio {
+  static instances: MockAudio[] = [];
+  src: string;
+  play = vi.fn().mockResolvedValue(undefined);
+
+  constructor(src: string) {
+    this.src = src;
+    MockAudio.instances.push(this);
+  }
+}
+
 beforeEach(() => {
   MockWebSocket.instances = [];
+  MockAudio.instances = [];
   vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+  vi.stubGlobal('Audio', MockAudio as unknown as typeof Audio);
 });
 
 test('grid dimensions default to 15x15 until the backend says otherwise', () => {
@@ -89,6 +102,23 @@ test('a combat_state message without grid dimensions leaves the current size alo
   });
   expect(result.current.gridWidth).toBe(15);
   expect(result.current.gridHeight).toBe(15);
+});
+
+test('an audio_ready message plays the narration clip via the Audio API', async () => {
+  renderHook(() => useGameWebSocket('player-1', 'session-1'), { wrapper });
+  const ws = MockWebSocket.instances[0];
+
+  act(() => {
+    ws.onmessage?.({
+      data: JSON.stringify({ type: 'audio_ready', url: '/audio/narrator_abc123.mp3', source: 'narrator' }),
+    });
+  });
+
+  await waitFor(() => {
+    expect(MockAudio.instances).toHaveLength(1);
+  });
+  expect(MockAudio.instances[0].src).toBe('http://localhost:8000/audio/narrator_abc123.mp3');
+  expect(MockAudio.instances[0].play).toHaveBeenCalled();
 });
 
 test('sendMoveEntity sends a move_entity UI_ACTION over the socket', () => {
