@@ -210,36 +210,31 @@ def test_human_gm_own_message_is_broadcast_as_authoritative_narration(human_gm_s
 
 
 def test_human_gm_message_uses_broadcast_to_session_reaching_everyone(human_gm_session):
-    """(e) + 'broadcast to everyone including the GM': the GM's
-    authoritative narration goes through `manager.broadcast_to_session`,
-    the same fan-out-to-every-connection primitive already covered against
-    multiple sockets by test_battlemap_ws.py (e.g. combat_state reaching
-    every connected client) -- so this asserts the call is actually made
-    for the session, rather than re-testing multi-socket delivery itself
-    (which is fan-out infrastructure, not Phase D's own logic)."""
-    host_character, game_session, host_user, _, _ = human_gm_session
-    token = create_access_token(host_user.id)
+    """(e) 'broadcast to everyone including the GM': the GM's authoritative
+    narration must actually reach a second, independently-connected
+    WebSocket client -- not just be observed as a call to
+    `manager.broadcast_to_session` with the right arguments. Two real WS
+    connections (GM + another player) are opened simultaneously against the
+    same session, following the same pattern already used safely in this
+    file by test_gm_consult_narrator_replies_only_to_gm_and_is_not_broadcast,
+    and both must receive the broadcast via real `receive_json()` calls."""
+    host_character, game_session, host_user, other_character, other_user = human_gm_session
+    host_token = create_access_token(host_user.id)
+    other_token = create_access_token(other_user.id)
 
-    broadcast_calls = []
-    from src.main import manager as connection_manager
-    original_broadcast = connection_manager.broadcast_to_session
+    with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{host_character.id}?token={host_token}") as host_ws, \
+         TestClient(app).websocket_connect(f"/ws/{game_session.id}/{other_character.id}?token={other_token}") as player_ws:
 
-    async def _spy_broadcast(message, session_id):
-        broadcast_calls.append((message, session_id))
-        await original_broadcast(message, session_id)
+        host_ws.send_json({"text": "Le coffre contient une potion."})
 
-    connection_manager.broadcast_to_session = _spy_broadcast
-    try:
-        with TestClient(app).websocket_connect(f"/ws/{game_session.id}/{host_character.id}?token={token}") as ws:
-            ws.send_json({"text": "Le coffre contient une potion."})
-            ws.receive_json()
-    finally:
-        connection_manager.broadcast_to_session = original_broadcast
+        host_msg = host_ws.receive_json()
+        player_msg = player_ws.receive_json()
 
-    assert any(
-        msg.get("type") == "narrator" and msg.get("category") == "GM" and str(sid) == str(game_session.id)
-        for msg, sid in broadcast_calls
-    )
+    for msg in (host_msg, player_msg):
+        assert msg["type"] == "narrator"
+        assert msg["category"] == "GM"
+        assert msg["role"] == "gm"
+        assert msg["message"] == "Le coffre contient une potion."
 
 
 # --- (c) GM on-demand consultation: works, and is never auto-broadcast ---
