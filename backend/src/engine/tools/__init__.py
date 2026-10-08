@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import Character, Item, InventorySlot, ItemType, WorldNPCTable
+from ..models import Character, Item, InventorySlot, ItemType, WorldNPCTable
 
 def roll_dice(notation: str) -> int:
     """Parse dice notation like '1d20+3' and return result."""
