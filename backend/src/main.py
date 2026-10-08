@@ -1,4 +1,5 @@
 import json
+import uuid
 import logging
 import asyncio
 from dotenv import load_dotenv
@@ -27,6 +28,7 @@ from src.engine.image_generator import generate_scene_image, download_image_loca
 from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
 from src.engine.services.character_service import validate_character_stats, SchemaValidationError
 from src.auth.deps import get_current_user
+from src.auth.utils import verify_token
 
 
 
@@ -54,7 +56,7 @@ async def save_chat_message_background(player_id: str | None, sender: str, msg_t
     except Exception as e:
         logger.error(f"Erreur lors de la sauvegarde du message en arrière-plan: {e}")
 
-async def background_image_generation(player_id: str, description: str, manager: "ConnectionManager"):
+async def background_image_generation(player_id: str, description: str, manager: "ConnectionManager", session_id: str):
     try:
         # 1. Génération du prompt
         async for session in get_session():
@@ -383,10 +385,51 @@ async def set_reference_portrait(character_id: str, request: ReferenceSetRequest
         logger.error(f"Erreur set_reference_portrait: {e}")
         return {"error": str(e)}
 
-@app.websocket("/ws/{player_id}")
+@app.websocket("/ws/{session_id}/{character_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id: str, token: str | None = None):
+    # Authentification : le JWT est passé en paramètre d'URL (les WebSockets navigateur n'ont pas de headers custom)
+    payload = verify_token(token) if token else None
+    user_id = None
+    if payload and payload.get("sub"):
+        try:
+            user_id = uuid.UUID(str(payload["sub"]))
+        except ValueError:
+            user_id = None
+    if user_id is None:
+        await websocket.close(code=1008)
+        return
 
-async def websocket_endpoint(websocket: WebSocket, player_id: str):
-    await manager.connect(websocket)
+    # Autorisation : le personnage appartient à l'utilisateur et participe à la session
+    try:
+        s_id = uuid.UUID(session_id)
+        c_id = uuid.UUID(character_id)
+    except ValueError:
+        await websocket.close(code=1008)
+        return
+
+    authorized = False
+    async for db_session in get_session():
+        user_res = await db_session.execute(select(User).where(User.id == user_id))
+        char_res = await db_session.execute(select(Character).where(Character.id == c_id))
+        char_obj = char_res.scalars().first()
+        part_res = await db_session.execute(
+            select(SessionParticipants).where(
+                SessionParticipants.session_id == s_id,
+                SessionParticipants.character_id == c_id,
+            )
+        )
+        authorized = (
+            user_res.scalars().first() is not None
+            and char_obj is not None
+            and char_obj.user_id == user_id
+            and part_res.scalars().first() is not None
+        )
+        break
+    if not authorized:
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(websocket, session_id)
 
     # Load and send chat history
     try:
@@ -416,7 +459,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
             # Send initial battle state if applicable
             async for session in get_session():
-                import uuid
                 statement = select(Character).where(Character.id == uuid.UUID(character_id))
                 results = await session.execute(statement)
                 char = results.scalars().first()
@@ -435,7 +477,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                     )
                 break
     except Exception as e:
-        logger.error(f"Erreur lors du chargement de l'historique pour {player_id}: {e}")
+        logger.error(f"Erreur lors du chargement de l'historique pour {character_id}: {e}")
 
     try:
         while True:
@@ -446,7 +488,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError as e:
-                logger.warning(f"Message JSON invalide de {player_id}: {e}")
+                logger.warning(f"Message JSON invalide de {character_id}: {e}")
                 await manager.send_personal_message(
                     {"type": "error", "message": "Format JSON invalide."},
                     websocket
@@ -460,7 +502,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 item_id_str = payload.get("item_id")
 
                 if action and item_id_str:
-                    import uuid
                     from src.engine.models import InventorySlot, Item
                     from src.engine.tools import roll_dice
 
@@ -610,7 +651,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
             task.add_done_callback(background_tasks.discard)
 
             if player_text.strip() == "/battle":
-                import uuid
                 async for session in get_session():
                     statement = select(Character).where(Character.id == uuid.UUID(character_id))
                     result = await session.execute(statement)
@@ -676,7 +716,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 continue
 
             if player_text.strip() == "/endbattle":
-                import uuid
                 async for session in get_session():
                     statement = select(Character).where(Character.id == uuid.UUID(character_id))
                     result = await session.execute(statement)
@@ -712,7 +751,7 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
             # 2. Analyse de l'intention
             intent = analyze_player_intent(player_text)
-            logger.info(f"[{player_id}] Intention détectée: {intent.intent.value} ({intent.action_type})")
+            logger.info(f"[{character_id}] Intention détectée: {intent.intent.value} ({intent.action_type})")
 
             # 3. Aiguillage
             if intent.intent == IntentType.IGNORE:
@@ -723,7 +762,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
                 # --- ARBITRATION BLOCK ---
                 arbitration_context = ""
                 if intent.intent == IntentType.ACTION:
-                    import uuid
                     async for session in get_session():
                         # Try to find the character for this player
                         statement = select(Character).where(Character.id == uuid.UUID(character_id))
@@ -829,7 +867,6 @@ async def websocket_endpoint(websocket: WebSocket, player_id: str):
 
                 # 2. Générer le texte du Narrateur
                 async for session in get_session():
-                    import uuid
                     statement = select(Character).where(Character.id == uuid.UUID(character_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()

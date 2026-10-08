@@ -46,17 +46,18 @@ async def test_add_and_get_memory():
     text2 = "Les joueurs ont volé une pomme au marché."
 
     # L'ajout devrait fonctionner sans exception
-    doc_id1 = await vector_db.add_to_memory(text=text1, memory_type="lore")
+    universe_id = "test-universe"
+    doc_id1 = await vector_db.add_to_memory(text=text1, memory_type="lore", metadata={"universe_id": universe_id})
     assert doc_id1 is not None
 
-    doc_id2 = await vector_db.add_to_memory(text=text2, memory_type="session_log")
+    doc_id2 = await vector_db.add_to_memory(text=text2, memory_type="session_log", metadata={"universe_id": universe_id})
     assert doc_id2 is not None
 
     # Petit délai pour laisser ChromaDB indexer si nécessaire
     await asyncio.sleep(0.1)
 
     # Récupération sans filtre
-    result_all = await vector_db.get_relevant_context(query="Qui est le forgeron ?", limit=5)
+    result_all = await vector_db.get_relevant_context(query="Qui est le forgeron ?", universe_id=universe_id, limit=5)
 
     # Vérifie que les résultats contiennent les textes formatés attendus
     assert "[Catégorie : lore] - Le forgeron de la ville s'appelle Thorin." in result_all
@@ -66,7 +67,7 @@ async def test_add_and_get_memory():
     assert "\n\n" in result_all
 
     # Récupération avec filtre
-    result_filtered = await vector_db.get_relevant_context(query="Qui est le forgeron ?", limit=5, filter_type="lore")
+    result_filtered = await vector_db.get_relevant_context(query="Qui est le forgeron ?", universe_id=universe_id, limit=5, filter_type="lore")
     assert "[Catégorie : lore] - Le forgeron de la ville s'appelle Thorin." in result_filtered
     assert "[Catégorie : session_log]" not in result_filtered
 

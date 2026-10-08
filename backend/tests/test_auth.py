@@ -49,7 +49,7 @@ def test_register_user_duplicate():
 
 def test_login_success():
     client.post("/auth/register", json={"username": "loginuser", "password": "securepassword"})
-    response = client.post("/auth/token", json={"username": "loginuser", "password": "securepassword"})
+    response = client.post("/auth/token", data={"username": "loginuser", "password": "securepassword"})
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -57,6 +57,6 @@ def test_login_success():
 
 def test_login_failure():
     client.post("/auth/register", json={"username": "baduser", "password": "password"})
-    response = client.post("/auth/token", json={"username": "baduser", "password": "wrongpassword"})
+    response = client.post("/auth/token", data={"username": "baduser", "password": "wrongpassword"})
     assert response.status_code == 401
     assert response.json()["detail"] == "Incorrect username or password"
