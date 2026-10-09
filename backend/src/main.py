@@ -14,6 +14,7 @@ from src.auth.router import auth_router
 from src.config import get_cors_origins
 
 from src.engine.database import init_db, get_session
+from src.engine.game_systems import ensure_default_game_systems, get_default_game_system
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.engine.models import ChatMessage
 from sqlmodel import select, or_
@@ -103,6 +104,9 @@ async def lifespan(app: FastAPI):
     # Démarrage
     logger.info("Initialisation de la base de données...")
     await init_db()
+    async for db_session in get_session():
+        await ensure_default_game_systems(db_session)
+        break
     yield
     # Arrêt
     logger.info("Arrêt de l'application...")
@@ -680,8 +684,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                             uni = await session.get(Universe, game_session.universe_id)
                             game_system = await session.get(GameSystem, uni.game_system_id) if uni and uni.game_system_id else None
                             if not game_system:
-                                gs_result = await session.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
-                                game_system = gs_result.scalars().first()
+                                game_system = await get_default_game_system(session)
                             if not game_system:
                                 arb_error = "Aucun système de jeu configuré pour cet univers."
                                 break
@@ -1133,8 +1136,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: s
                             uni = await session.get(Universe, char.universe_id)
                             if not uni or not uni.game_system_id:
                                 # Fallback to default
-                                gs_result = await session.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
-                                game_system = gs_result.scalars().first()
+                                game_system = await get_default_game_system(session)
                             else:
                                 game_system = await session.get(GameSystem, uni.game_system_id)
 

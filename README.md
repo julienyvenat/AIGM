@@ -13,6 +13,16 @@ cd ..
 backend/run.sh
 ```
 
+## Système de jeu par défaut : D&D SRD 5.2
+
+Le système **D&D SRD 5.2** (règles 2024) est créé automatiquement au démarrage du backend
+(`src/engine/game_systems/`, seed idempotent) et utilisé par défaut pour les nouveaux univers.
+Ses règles sont injectées via `core_rules_prompt` dans l'Agent Arbitre (aucune règle codée en dur).
+
+Ce travail comprend des éléments du System Reference Document 5.2 de Wizards of the Coast LLC
+(https://www.dndbeyond.com/srd), sous licence Creative Commons Attribution 4.0 International
+(https://creativecommons.org/licenses/by/4.0/legalcode).
+
 ## Installation et lancement du Frontend
 
 ```bash
