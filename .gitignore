@@ -1,6 +1,7 @@
 __pycache__/
 backend/chroma_data/
 .env
+.env.production
 backend/venv
 .venv/
 testenv/

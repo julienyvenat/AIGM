@@ -16,7 +16,7 @@ import type { Character } from '../types';
 export function Play() {
   const { sessionId, characterId } = useParams<{ sessionId: string, characterId: string }>();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [showCharacterManager, setShowCharacterManager] = useState(false);
@@ -25,12 +25,44 @@ export function Play() {
   const [activePlayerId, setActivePlayerId] = useState<string | null>(characterId || null);
   const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [voiceToggleLoading, setVoiceToggleLoading] = useState(false);
+  const [gmNarratorPrompt, setGmNarratorPrompt] = useState('');
+  const [gmArbitratorEntityId, setGmArbitratorEntityId] = useState('');
+  const [gmArbitratorPrompt, setGmArbitratorPrompt] = useState('');
+  const [gmSceneDescription, setGmSceneDescription] = useState('');
 
   const handleStatsUpdate = useCallback((updatedCharacter: Partial<Character>) => {
     setCharacter(prev => prev ? { ...prev, ...updatedCharacter } as Character : updatedCharacter as Character);
   }, []);
 
-  const { isConnected, messages, sendMessage, sendAction, entities, currentSceneImage, clearSceneImage, battlemapImageUrl } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate);
+  // Only the session host can toggle voice on/off (enforced backend-side by
+  // PUT /sessions/{id}/voice, host_id check) -- this costs a real OpenAI TTS
+  // API call per narrator reply once enabled, so it isn't exposed as a
+  // free-for-all switch.
+  const isHost = !!user?.sub && !!sessionContext?.host_id && String(sessionContext.host_id) === String(user.sub);
+  // The human GM of a HUMAN-GM session (Phase D) -- gates the on-demand
+  // AI-consultation panel below, mirroring the backend's own
+  // `is_session_gm` check in main.py.
+  const isGm = isHost && sessionContext?.gm_type === 'HUMAN';
+
+  const {
+    isConnected,
+    messages,
+    sendMessage,
+    sendAction,
+    sendMoveEntity,
+    entities,
+    currentSceneImage,
+    clearSceneImage,
+    battlemapImageUrl,
+    gridWidth,
+    gridHeight,
+    gmAdvisory,
+    clearGmAdvisory,
+    sendGmConsultNarrator,
+    sendGmConsultArbitrator,
+    sendGmGenerateScene,
+  } = useGameWebSocket(activePlayerId, sessionId || null, handleStatsUpdate, isGm);
 
   useEffect(() => {
     if (!sessionId || !characterId || !token) {
@@ -89,6 +121,32 @@ export function Play() {
     setActivePlayerId(updatedCharacter.id);
   };
 
+  const handleToggleVoice = async () => {
+    if (!sessionId || !sessionContext || !token) return;
+    const nextValue = !sessionContext.voice_enabled;
+    setVoiceToggleLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/sessions/${sessionId}/voice`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ voice_enabled: nextValue })
+      });
+      if (!response.ok) {
+        console.error('Failed to toggle voice narration');
+        return;
+      }
+      const data = await response.json();
+      setSessionContext(prev => prev ? { ...prev, voice_enabled: data.voice_enabled } : prev);
+    } catch (error) {
+      console.error('Error toggling voice narration:', error);
+    } finally {
+      setVoiceToggleLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="h-full flex items-center justify-center text-gray-500">Connexion à l'univers...</div>;
   }
@@ -108,6 +166,39 @@ export function Play() {
                >
                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
                </button>
+             )}
+
+             {sessionContext && (
+               isHost ? (
+                 <button
+                   onClick={handleToggleVoice}
+                   disabled={voiceToggleLoading}
+                   className={`p-1.5 border rounded transition-colors mr-2 disabled:opacity-50 ${
+                     sessionContext.voice_enabled
+                       ? 'bg-emerald-900/50 hover:bg-emerald-800 border-emerald-500/50 text-emerald-400'
+                       : 'bg-gray-800/50 hover:bg-gray-700 border-gray-600 text-gray-400'
+                   }`}
+                   title={sessionContext.voice_enabled ? 'Narration vocale activée (cliquer pour désactiver)' : 'Narration vocale désactivée (cliquer pour activer)'}
+                   aria-label="Basculer la narration vocale"
+                 >
+                   {sessionContext.voice_enabled ? (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                   ) : (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                   )}
+                 </button>
+               ) : (
+                 <span
+                   className="p-1.5 rounded text-gray-500 mr-2"
+                   title={sessionContext.voice_enabled ? 'Narration vocale activée par le MJ' : 'Narration vocale désactivée'}
+                 >
+                   {sessionContext.voice_enabled ? (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                   ) : (
+                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                   )}
+                 </span>
+               )
              )}
 
              <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
@@ -132,7 +223,7 @@ export function Play() {
       {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Chat (1/3) */}
-        <section className="w-1/3 border-r border-gray-700 bg-gray-800/50 relative">
+        <section className="w-1/3 border-r border-gray-700 bg-gray-800/50 relative flex flex-col">
            {!isConnected ? (
               <div className="absolute inset-0 flex items-center justify-center p-4">
                  <div className="text-center text-gray-500 italic">
@@ -140,13 +231,136 @@ export function Play() {
                  </div>
               </div>
            ) : (
-             <ChatPanel messages={messages} sendMessage={sendMessage} />
+             <>
+               <div className="flex-1 min-h-0">
+                 <ChatPanel messages={messages} sendMessage={sendMessage} />
+               </div>
+
+               {/* Human-GM on-demand AI consultation tools (Phase D). Only
+                   the GM sees this -- advisory only, never auto-broadcast:
+                   see gm_consult_narrator/gm_consult_arbitrator in main.py. */}
+               {isGm && (
+                 <div className="shrink-0 max-h-64 overflow-y-auto border-t border-amber-700/50 bg-gray-900/80 p-3 text-sm space-y-3">
+                   <div className="text-amber-400 font-bold text-xs uppercase tracking-wide">Outils MJ (consultation IA, non diffusée)</div>
+
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       value={gmNarratorPrompt}
+                       onChange={(e) => setGmNarratorPrompt(e.target.value)}
+                       placeholder="Décrire la scène à faire suggérer par le Narrateur..."
+                       className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <button
+                       type="button"
+                       disabled={!gmNarratorPrompt.trim()}
+                       onClick={() => { sendGmConsultNarrator(gmNarratorPrompt); setGmNarratorPrompt(''); }}
+                       className="px-2 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 rounded text-xs font-medium"
+                     >
+                       Narrateur
+                     </button>
+                   </div>
+
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       list="gm-entity-ids"
+                       value={gmArbitratorEntityId}
+                       onChange={(e) => setGmArbitratorEntityId(e.target.value)}
+                       placeholder="ID entité (PJ/PNJ)"
+                       className="w-28 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <datalist id="gm-entity-ids">
+                       {entities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                     </datalist>
+                     <input
+                       type="text"
+                       value={gmArbitratorPrompt}
+                       onChange={(e) => setGmArbitratorPrompt(e.target.value)}
+                       placeholder="Action à arbitrer (ex: attaque au corps à corps)"
+                       className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <button
+                       type="button"
+                       disabled={!gmArbitratorEntityId.trim() || !gmArbitratorPrompt.trim()}
+                       onClick={() => { sendGmConsultArbitrator(gmArbitratorEntityId, gmArbitratorPrompt); setGmArbitratorPrompt(''); }}
+                       className="px-2 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 rounded text-xs font-medium"
+                     >
+                       Arbitre
+                     </button>
+                   </div>
+
+                   <div className="flex gap-2">
+                     <input
+                       type="text"
+                       value={gmSceneDescription}
+                       onChange={(e) => setGmSceneDescription(e.target.value)}
+                       placeholder="Décrire l'image de scène à générer..."
+                       className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                     />
+                     <button
+                       type="button"
+                       disabled={!gmSceneDescription.trim()}
+                       onClick={() => { sendGmGenerateScene(gmSceneDescription); setGmSceneDescription(''); }}
+                       className="px-2 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 rounded text-xs font-medium"
+                     >
+                       Générer scène
+                     </button>
+                   </div>
+
+                   {gmAdvisory && (
+                     <div className="bg-gray-800 border border-amber-700/50 rounded p-2">
+                       <div className="flex justify-between items-start gap-2">
+                         <span className="text-[10px] uppercase text-amber-400 font-bold">
+                           Suggestion ({gmAdvisory.advisoryType === 'narrator' ? 'Narrateur' : 'Arbitre'})
+                         </span>
+                         <button type="button" onClick={clearGmAdvisory} className="text-gray-500 hover:text-gray-300 text-xs">✕</button>
+                       </div>
+                       {gmAdvisory.advisoryType === 'narrator' ? (
+                         <>
+                           <p className="text-gray-200 text-xs mt-1">{gmAdvisory.message}</p>
+                           <button
+                             type="button"
+                             onClick={() => gmAdvisory.message && sendMessage(gmAdvisory.message)}
+                             className="mt-2 px-2 py-1 bg-emerald-700 hover:bg-emerald-600 rounded text-xs font-medium"
+                           >
+                             Envoyer aux joueurs comme narration officielle
+                           </button>
+                         </>
+                       ) : (
+                         gmAdvisory.result && (
+                           <div className="text-gray-200 text-xs mt-1 space-y-0.5">
+                             <p>{gmAdvisory.result.narrative}</p>
+                             <p className="text-gray-400">
+                               Succès : {gmAdvisory.result.success ? 'oui' : 'non'} · PV : {gmAdvisory.result.hp_change}
+                             </p>
+                             <button
+                               type="button"
+                               onClick={() => sendMessage(gmAdvisory.result!.narrative)}
+                               className="mt-2 px-2 py-1 bg-emerald-700 hover:bg-emerald-600 rounded text-xs font-medium"
+                             >
+                               Envoyer aux joueurs comme résolution officielle
+                             </button>
+                           </div>
+                         )
+                       )}
+                     </div>
+                   )}
+                 </div>
+               )}
+             </>
            )}
         </section>
 
         {/* Right Column: Map/Content (2/3) */}
         <section className="w-2/3 p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMjAgMSAzOSAzOSAxIDM5IiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')]">
-          <BattleMap entities={entities} battlemapImageUrl={battlemapImageUrl} />
+          <BattleMap
+            entities={entities}
+            battlemapImageUrl={battlemapImageUrl}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            onMoveEntity={sendMoveEntity}
+          />
 
           {currentSceneImage && (
             <SceneViewer imageUrl={currentSceneImage} onClose={clearSceneImage} />

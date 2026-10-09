@@ -1,5 +1,5 @@
 import pytest
-from src.engine.tools.dice_tool import roll_dice, DiceRollResult
+from src.engine.dice_tool import roll_dice, DiceRollResult
 
 def test_roll_dice_simple():
     result = roll_dice("1d20")

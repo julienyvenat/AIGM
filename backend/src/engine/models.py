@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Any, Dict
 from enum import Enum
 from sqlmodel import Field, Relationship, SQLModel
@@ -9,6 +9,15 @@ class GameSessionStatus(str, Enum):
     LOBBY = "LOBBY"
     ACTIVE = "ACTIVE"
     ENDED = "ENDED"
+
+class GMType(str, Enum):
+    """Who holds GM authority for a GameSession: the AI narrator/arbitrator
+    pipeline (current/default behavior, unchanged), or a human participant.
+    See GameSession.gm_type and the WS handler in main.py (branches early on
+    this instead of threading conditionals through the existing AI-GM code
+    path)."""
+    AI = "AI"
+    HUMAN = "HUMAN"
 
 class ItemType(str, Enum):
     WEAPON = "WEAPON"
@@ -47,7 +56,7 @@ class ChatMessage(SQLModel, table=True):
     type: str
     category: Optional[str] = Field(default=None)
     content: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Item(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -110,6 +119,16 @@ class WorldNPCTable(SQLModel, table=True):
     y: int = Field(default=0)
     is_in_combat: bool = Field(default=False)
 
+    # Lightweight "combat sheet" — one notch above pure lore, still nowhere
+    # near a full Character sheet. Game-agnostic JSON fields (AGENTS.md §8):
+    # no hardcoded damage types or D&D-specific mechanics.
+    # e.g. ["feu", "poison"]
+    resistances: List[str] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    # e.g. ["froid"]
+    vulnerabilities: List[str] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+    # e.g. [{"name": "Morsure", "damage": "1d6"}]
+    actions: List[Dict[str, Any]] = Field(default_factory=list, sa_column=sqlalchemy.Column(sqlalchemy.JSON))
+
     universe: Optional["Universe"] = Relationship(back_populates="npcs")
 
 class WorldLocationTable(SQLModel, table=True):
@@ -155,6 +174,25 @@ class GameSession(SQLModel, table=True):
     host_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     current_battlemap_url: Optional[str] = Field(default=None)
     game_mode: str = Field(default="NARRATIVE")
+    # Battlemap grid dimensions in cells. Defaults match the previous
+    # hardcoded 15x15 grid; /battle recomputes these from the actual spread
+    # of entities placed on the map (see main.py) instead of a fixed size.
+    grid_width: int = Field(default=15)
+    grid_height: int = Field(default=15)
+    # Opt-in text-to-speech (OpenAI TTS costs money per call): False by
+    # default, toggled per-session via PUT /sessions/{id}/voice. When False,
+    # no TTS API calls are made at all (see background_tts_generation).
+    voice_enabled: bool = Field(default=False)
+    # Who holds GM authority for this session (Phase D). Defaults to AI --
+    # the pre-existing, unchanged behavior where the narrator/arbitrator
+    # agents autonomously respond to ROLEPLAY/ACTION intent. When HUMAN,
+    # `host_id` doubles as "the human GM"'s user id: no separate
+    # `gm_user_id` field, since a mid-session GM handoff between
+    # participants was never asked for here (see AGENTS.md / phase design
+    # notes) -- keeping it this simple avoids over-engineering a transfer
+    # feature nobody requested. If that need shows up later, add a
+    # dedicated `gm_user_id` then rather than overloading `host_id` further.
+    gm_type: GMType = Field(default=GMType.AI)
 
     universe: Optional["Universe"] = Relationship(back_populates="sessions")
     participants: List[Character] = Relationship(back_populates="game_sessions", link_model=SessionParticipants)

@@ -10,7 +10,7 @@ interface CharacterCreationFormProps {
 export const CharacterCreationForm = ({ universes, onSuccess }: CharacterCreationFormProps) => {
   const [newCharName, setNewCharName] = useState("");
   const [newCharUniverseId, setNewCharUniverseId] = useState("");
-  const [stats, setStats] = useState<Record<string, any>>({});
+  const [stats, setStats] = useState<Record<string, string | number>>({});
   const [creatingChar, setCreatingChar] = useState(false);
   const [charCreateError, setCharCreateError] = useState<string | null>(null);
 
@@ -46,7 +46,7 @@ export const CharacterCreationForm = ({ universes, onSuccess }: CharacterCreatio
       // (e.g. "STR": "Force - Puissance physique"), it carries no type information.
       // Every stat is entered as a number (see the "number" inputs below), so
       // convert to a number here and only fall back to the raw string if that fails.
-      const formattedStats: Record<string, any> = {};
+      const formattedStats: Record<string, string | number> = {};
       Object.keys(schema).forEach(key => {
          const rawValue = stats[key];
          const numericValue = Number(rawValue);

@@ -9,6 +9,7 @@ export function Home() {
   const [selectedUniverse, setSelectedUniverse] = useState<Universe | null>(null);
   const [myCharacters, setMyCharacters] = useState<Character[]>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
+  const [gmType, setGmType] = useState<'AI' | 'HUMAN'>('AI');
   const [actionError, setActionError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -61,7 +62,7 @@ export function Home() {
       // 1. Create session
       const sessionRes = await apiFetch(`${baseUrl}/sessions/`, {
         method: 'POST',
-        body: JSON.stringify({ universe_id: selectedUniverse.id })
+        body: JSON.stringify({ universe_id: selectedUniverse.id, gm_type: gmType })
       });
 
       if (!sessionRes.ok) throw new Error("Erreur de création de session");
@@ -157,6 +158,30 @@ export function Home() {
                 <div className="text-amber-400 text-sm bg-amber-900/30 p-3 rounded">
                   Vous devez d'abord créer un personnage pour cet univers depuis le Dashboard.
                 </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Maître du Jeu :</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGmType('AI')}
+                  className={`flex-1 py-2 rounded-md border text-sm font-medium transition-colors ${gmType === 'AI' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-gray-500'}`}
+                >
+                  IA (Narrateur automatique)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGmType('HUMAN')}
+                  className={`flex-1 py-2 rounded-md border text-sm font-medium transition-colors ${gmType === 'HUMAN' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-gray-500'}`}
+                >
+                  Humain (Vous êtes le MJ)
+                </button>
+              </div>
+              {gmType === 'HUMAN' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  L'IA ne narrera plus automatiquement : vous devenez le MJ et pouvez consulter le Narrateur/Arbitre à la demande depuis la partie.
+                </p>
               )}
             </div>
             <button

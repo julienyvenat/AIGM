@@ -1,5 +1,4 @@
 import json
-import uuid
 import logging
 import asyncio
 from dotenv import load_dotenv
@@ -12,12 +11,14 @@ from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from src.world_builder.world_router import router as world_router
 from src.auth.router import auth_router
+from src.config import get_cors_origins
 
 from src.engine.database import init_db, get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.engine.models import ChatMessage
 from sqlmodel import select, or_
 from src.agents.router import analyze_player_intent, IntentType
+from src.agents.arbitrator import arbitrate_action
 from src.agents.narrator import generate_narrator_response
 from src.memory.vector_db import get_relevant_context
 
@@ -25,10 +26,10 @@ from src.agents.scene_editor import analyze_scene, ImageDecision
 from src.agents.image_prompter import generate_image_prompt
 from pydantic import BaseModel
 from src.engine.image_generator import generate_scene_image, download_image_locally, generate_battlemap_prompt
-from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe
+from src.engine.audio_generator import generate_speech_audio
+from src.engine.models import Character, WorldNPCTable, User, GameSession, SessionParticipants, GameSystem, Universe, GMType
 from src.engine.services.character_service import validate_character_stats, SchemaValidationError
-from src.auth.deps import get_current_user
-from src.auth.utils import verify_token
+from src.auth.deps import get_current_user, get_user_from_token
 
 
 
@@ -78,6 +79,25 @@ async def background_image_generation(player_id: str, description: str, manager:
         logger.error(f"Erreur dans background_image_generation: {e}")
 
 
+async def background_tts_generation(text: str, manager: "ConnectionManager", session_id: str, source: str = "narrator"):
+    """Génère l'audio (TTS) d'une réplique du Narrateur/PNJ en arrière-plan et
+    diffuse son URL une fois prête, même pattern que background_image_generation
+    ci-dessus. N'est appelée que si GameSession.voice_enabled est True (voir
+    l'appelant) : aucun appel API ni coût si l'utilisateur n'a pas activé la voix."""
+    try:
+        audio_url = await generate_speech_audio(text, filename_prefix=source)
+
+        if audio_url:
+            logger.info(f"Audio TTS généré avec succès: {audio_url}")
+            await manager.broadcast_to_session({
+                "type": "audio_ready",
+                "url": audio_url,
+                "source": source,
+            }, session_id)
+    except Exception as e:
+        logger.error(f"Erreur dans background_tts_generation: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Démarrage
@@ -94,6 +114,8 @@ import os
 from fastapi.staticfiles import StaticFiles
 os.makedirs("backend/images", exist_ok=True)
 app.mount("/images", StaticFiles(directory="backend/images"), name="images")
+os.makedirs("backend/audio", exist_ok=True)
+app.mount("/audio", StaticFiles(directory="backend/audio"), name="audio")
 
 class CharacterCreate(BaseModel):
     name: str
@@ -165,6 +187,10 @@ async def get_characters(current_user: User = Depends(get_current_user), db: Asy
 
 class SessionCreate(BaseModel):
     universe_id: str
+    # Who holds GM authority for this session: "AI" (default, current/
+    # existing autonomous narrator+arbitrator behavior) or "HUMAN" (the
+    # creator -- host_id -- becomes the human GM; see GameSession.gm_type).
+    gm_type: str = "AI"
 
 @app.post("/sessions/")
 async def create_session(session_data: SessionCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
@@ -174,11 +200,17 @@ async def create_session(session_data: SessionCreate, current_user: User = Depen
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid universe_id format")
 
+    try:
+        gm_type = GMType(session_data.gm_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid gm_type: must be 'AI' or 'HUMAN'")
+
     from src.engine.models import GameSessionStatus
     game_session = GameSession(
         universe_id=universe_id,
         host_id=current_user.id,
-        status=GameSessionStatus.LOBBY
+        status=GameSessionStatus.LOBBY,
+        gm_type=gm_type,
     )
     db.add(game_session)
     await db.commit()
@@ -257,10 +289,44 @@ async def join_session(session_id: str, join_req: JoinSessionRequest, current_us
         await db.commit()
 
     return {"status": "success", "message": "Joined session successfully"}
-# Configuration CORS pour autoriser toutes les origines (développement local)
+
+class VoiceToggleRequest(BaseModel):
+    voice_enabled: bool
+
+@app.put("/sessions/{session_id}/voice")
+async def set_voice_enabled(session_id: str, request: VoiceToggleRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    """Active/désactive la narration vocale (TTS OpenAI) pour une session.
+    Désactivé par défaut (coût par appel API) -- voir GameSession.voice_enabled.
+    Seul l'hôte de la session peut la basculer, même convention que les autres
+    routes de session (mêmes checks de propriété que /characters/{id}/set-reference)."""
+    import uuid
+    try:
+        s_id = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+    game_session = await db.get(GameSession, s_id)
+    if not game_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if game_session.host_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not the host of this session")
+
+    game_session.voice_enabled = request.voice_enabled
+    db.add(game_session)
+    await db.commit()
+    await db.refresh(game_session)
+    return {"status": "success", "voice_enabled": game_session.voice_enabled}
+# Configuration CORS : liste d'origines autorisées pilotée par la variable
+# d'environnement CORS_ORIGINS (une ou plusieurs origines séparées par des
+# virgules, ex: "https://jdr.yvenat.eu"). Sans cette variable (dev local), on
+# retombe sur une liste restreinte à localhost -- jamais de wildcard "*" en
+# association avec allow_credentials=True (interdit par la spec CORS de
+# toute façon, et surtout pas ce qu'on veut en production).
+allowed_origins = get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -385,47 +451,48 @@ async def set_reference_portrait(character_id: str, request: ReferenceSetRequest
         logger.error(f"Erreur set_reference_portrait: {e}")
         return {"error": str(e)}
 
-@app.websocket("/ws/{session_id}/{character_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id: str, token: str | None = None):
-    # Authentification : le JWT est passé en paramètre d'URL (les WebSockets navigateur n'ont pas de headers custom)
-    payload = verify_token(token) if token else None
-    user_id = None
-    if payload and payload.get("sub"):
-        try:
-            user_id = uuid.UUID(str(payload["sub"]))
-        except ValueError:
-            user_id = None
-    if user_id is None:
+@app.websocket("/ws/{session_id}/{player_id}")
+
+async def websocket_endpoint(websocket: WebSocket, session_id: str, player_id: str):
+    import uuid
+
+    # --- Auth: verify the JWT passed as a `token` query param (browsers
+    # can't set custom WS headers, cf. AGENTS.md §7). Reject before
+    # accepting the connection if it's missing/invalid, or if the
+    # authenticated user isn't the owner of the `player_id` Character they
+    # are trying to connect as (same ownership check as the
+    # /sessions/{id}/join and /characters/{id}/set-reference HTTP routes).
+    token = websocket.query_params.get("token")
+    authorized_user = None
+    if token:
+        async for auth_session in get_session():
+            authorized_user = await get_user_from_token(token, auth_session)
+            break
+
+    if authorized_user is None:
+        logger.warning(
+            f"Connexion WebSocket refusée (token manquant/invalide) pour player_id={player_id}, session={session_id}."
+        )
         await websocket.close(code=1008)
         return
 
-    # Autorisation : le personnage appartient à l'utilisateur et participe à la session
     try:
-        s_id = uuid.UUID(session_id)
-        c_id = uuid.UUID(character_id)
+        character_uuid = uuid.UUID(player_id)
     except ValueError:
-        await websocket.close(code=1008)
-        return
+        character_uuid = None
 
-    authorized = False
-    async for db_session in get_session():
-        user_res = await db_session.execute(select(User).where(User.id == user_id))
-        char_res = await db_session.execute(select(Character).where(Character.id == c_id))
-        char_obj = char_res.scalars().first()
-        part_res = await db_session.execute(
-            select(SessionParticipants).where(
-                SessionParticipants.session_id == s_id,
-                SessionParticipants.character_id == c_id,
-            )
+    owns_character = False
+    if character_uuid is not None:
+        async for auth_session in get_session():
+            char_result = await auth_session.execute(select(Character).where(Character.id == character_uuid))
+            character = char_result.scalars().first()
+            owns_character = character is not None and character.user_id == authorized_user.id
+            break
+
+    if not owns_character:
+        logger.warning(
+            f"Connexion WebSocket refusée (utilisateur {authorized_user.id} n'est pas propriétaire du personnage {player_id})."
         )
-        authorized = (
-            user_res.scalars().first() is not None
-            and char_obj is not None
-            and char_obj.user_id == user_id
-            and part_res.scalars().first() is not None
-        )
-        break
-    if not authorized:
         await websocket.close(code=1008)
         return
 
@@ -435,7 +502,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
     try:
         async for session in get_session():
             statement = select(ChatMessage).where(
-                or_(ChatMessage.player_id == character_id, ChatMessage.player_id == None)
+                or_(ChatMessage.player_id == player_id, ChatMessage.player_id == None)
             ).order_by(ChatMessage.timestamp)
             results = await session.execute(statement)
             history_msgs = results.scalars().all()
@@ -458,26 +525,35 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                 )
 
             # Send initial battle state if applicable
+            # (game_mode / battlemap state live on the GameSession, not the Character)
             async for session in get_session():
-                statement = select(Character).where(Character.id == uuid.UUID(character_id))
-                results = await session.execute(statement)
-                char = results.scalars().first()
-                if char and char.game_mode == "BATTLE" and char.battlemap_image_url:
+                import uuid
+                try:
+                    game_session_uuid = uuid.UUID(session_id)
+                except ValueError:
+                    game_session_uuid = None
+                game_session = await session.get(GameSession, game_session_uuid) if game_session_uuid else None
+                if game_session and game_session.game_mode == "BATTLE" and game_session.current_battlemap_url:
                     await manager.send_personal_message(
-                        {"type": "battlemap_update", "url": char.battlemap_image_url},
+                        {"type": "battlemap_update", "url": game_session.current_battlemap_url},
                         websocket
                     )
 
                     # Also send combat state
                     from src.agents.narrator import get_combat_state
-                    combat_state = await get_combat_state(session, char.universe_id)
+                    combat_state = await get_combat_state(session, game_session.universe_id)
                     await manager.send_personal_message(
-                        {"type": "combat_state", "entities": combat_state},
+                        {
+                            "type": "combat_state",
+                            "entities": combat_state,
+                            "grid_width": game_session.grid_width,
+                            "grid_height": game_session.grid_height,
+                        },
                         websocket
                     )
                 break
     except Exception as e:
-        logger.error(f"Erreur lors du chargement de l'historique pour {character_id}: {e}")
+        logger.error(f"Erreur lors du chargement de l'historique pour {player_id}: {e}")
 
     try:
         while True:
@@ -488,27 +564,237 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError as e:
-                logger.warning(f"Message JSON invalide de {character_id}: {e}")
+                logger.warning(f"Message JSON invalide de {player_id}: {e}")
                 await manager.send_personal_message(
                     {"type": "error", "message": "Format JSON invalide."},
                     websocket
                 )
                 continue
 
+            # --- GM authority (Phase D) ---
+            # Looked up once per message and reused below to gate GM-only
+            # actions (/battle, /endbattle, the gm_consult_*/gm_generate_scene
+            # UI_ACTIONs) and to branch the narration pipeline just before
+            # intent analysis. Computing it here -- instead of threading a
+            # conditional through every existing line below -- keeps the
+            # AI-GM code path (game_session_gm_type == GMType.AI, the
+            # default) completely untouched: `is_session_gm` is always False
+            # for it, so every gate below is a no-op and every branch below
+            # falls through to the pre-existing behavior unchanged.
+            import uuid as _uuid_gm_check
+            game_session_gm_type = GMType.AI
+            is_session_gm = False
+            async for session in get_session():
+                try:
+                    _gs_for_gm_check = await session.get(GameSession, _uuid_gm_check.UUID(session_id))
+                except ValueError:
+                    _gs_for_gm_check = None
+                if _gs_for_gm_check:
+                    game_session_gm_type = _gs_for_gm_check.gm_type
+                    is_session_gm = (
+                        game_session_gm_type == GMType.HUMAN
+                        and _gs_for_gm_check.host_id == authorized_user.id
+                    )
+                break
 
             # Check for UI Actions bypassing the LLM
             if payload.get("type") == "UI_ACTION":
                 action = payload.get("action")
+
+                if action in ("gm_consult_narrator", "gm_consult_arbitrator", "gm_generate_scene"):
+                    # --- Human-GM on-demand AI consultation (Phase D) ---
+                    # These give a human GM the same underlying AI
+                    # capabilities the AI-GM path uses autonomously
+                    # (narrator prose, arbitrator dice/outcome resolution,
+                    # scene-image generation), but as an advisory tool the
+                    # GM explicitly calls -- never auto-broadcast as the
+                    # authoritative outcome. Only the session's human GM may
+                    # use them (same "only GM" authorization as /battle
+                    # below), and only in a HUMAN-GM session (they'd be
+                    # redundant in an AI-GM one, which already narrates
+                    # autonomously).
+                    if not is_session_gm:
+                        await manager.send_personal_message(
+                            {"type": "error", "message": "Seul le MJ humain de cette session peut faire ça."},
+                            websocket
+                        )
+                        continue
+
+                    if action == "gm_consult_narrator":
+                        situation_text = payload.get("text", "")
+                        async for session in get_session():
+                            game_session = await session.get(GameSession, _uuid_gm_check.UUID(session_id))
+                            game_mode = game_session.game_mode if game_session else "NARRATIVE"
+                            try:
+                                suggestion = await generate_narrator_response(
+                                    session, player_id, situation_text, game_mode=game_mode
+                                )
+                            except Exception as e:
+                                logger.error(f"Erreur gm_consult_narrator: {e}")
+                                suggestion = None
+                            break
+
+                        if suggestion is not None:
+                            # Personal message only -- advisory, not broadcast.
+                            await manager.send_personal_message(
+                                {"type": "gm_advisory", "advisory_type": "narrator", "message": suggestion},
+                                websocket
+                            )
+                        else:
+                            await manager.send_personal_message(
+                                {"type": "error", "message": "Le narrateur n'a pas pu générer de suggestion."},
+                                websocket
+                            )
+                        continue
+
+                    if action == "gm_consult_arbitrator":
+                        # Advisory arbitration for ANY entity in the universe
+                        # (the acting Character, or a WorldNPCTable -- e.g.
+                        # to resolve an NPC's combat turn), by entity_id.
+                        # Returns the ArbitratorResult as-is: it is never
+                        # applied to HP/resources automatically, unlike the
+                        # AI-GM ACTION-intent pipeline in main.py below --
+                        # the human GM decides what to actually apply.
+                        entity_id_str = payload.get("entity_id")
+                        action_text = payload.get("text", "")
+                        arb_result = None
+                        arb_error = None
+                        async for session in get_session():
+                            game_session = await session.get(GameSession, _uuid_gm_check.UUID(session_id))
+                            entity = None
+                            try:
+                                entity_uuid = _uuid_gm_check.UUID(entity_id_str) if entity_id_str else None
+                            except ValueError:
+                                entity_uuid = None
+                            if entity_uuid and game_session:
+                                char_res = await session.execute(select(Character).where(Character.id == entity_uuid))
+                                entity = char_res.scalars().first()
+                                if not entity:
+                                    npc_res = await session.execute(select(WorldNPCTable).where(WorldNPCTable.id == entity_uuid))
+                                    entity = npc_res.scalars().first()
+
+                            if not entity or not game_session or entity.universe_id != game_session.universe_id:
+                                arb_error = "Entité introuvable dans cette session."
+                                break
+
+                            uni = await session.get(Universe, game_session.universe_id)
+                            game_system = await session.get(GameSystem, uni.game_system_id) if uni and uni.game_system_id else None
+                            if not game_system:
+                                gs_result = await session.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
+                                game_system = gs_result.scalars().first()
+                            if not game_system:
+                                arb_error = "Aucun système de jeu configuré pour cet univers."
+                                break
+
+                            arb_result = await arbitrate_action(entity, game_system, action_text)
+                            break
+
+                        if arb_error:
+                            await manager.send_personal_message({"type": "error", "message": arb_error}, websocket)
+                        else:
+                            await manager.send_personal_message(
+                                {
+                                    "type": "gm_advisory",
+                                    "advisory_type": "arbitrator",
+                                    "result": {
+                                        "action_type": arb_result.action_type,
+                                        "narrative": arb_result.narrative,
+                                        "success": arb_result.success,
+                                        "hp_change": arb_result.hp_change,
+                                        "consumed_resource_type": arb_result.consumed_resource_type,
+                                        "consumed_resource_name": arb_result.consumed_resource_name,
+                                    },
+                                },
+                                websocket
+                            )
+                        continue
+
+                    if action == "gm_generate_scene":
+                        # Manually trigger the same scene-image pipeline the
+                        # AI-GM path fires automatically off a narrator
+                        # reply (background_image_generation) -- broadcasts
+                        # `scene_image` to everyone once ready, same as
+                        # before, but here the human GM is the one deciding
+                        # a scene is worth illustrating.
+                        description = payload.get("description", "")
+                        task = asyncio.create_task(background_image_generation(player_id, description, manager, session_id))
+                        background_tasks.add(task)
+                        task.add_done_callback(background_tasks.discard)
+                        continue
+
+                if action == "move_entity":
+                    # Manual token placement on the Battlemap (drag & drop of a
+                    # PC or NPC token to a new cell). Bypasses the LLM entirely,
+                    # same as the other UI_ACTIONs below, but moves any entity
+                    # in the caller's universe rather than the caller's own
+                    # inventory, so it is handled separately.
+                    import uuid
+                    from src.engine.tools import set_entity_position
+
+                    entity_id_str = payload.get("entity_id")
+                    target_x = payload.get("x")
+                    target_y = payload.get("y")
+
+                    if entity_id_str is not None and target_x is not None and target_y is not None:
+                        async for session in get_session():
+                            try:
+                                mover_stmt = select(Character).where(Character.id == uuid.UUID(player_id))
+                                mover_res = await session.execute(mover_stmt)
+                                mover = mover_res.scalars().first()
+
+                                game_session_uuid = uuid.UUID(session_id)
+                                game_session = await session.get(GameSession, game_session_uuid)
+
+                                if not mover or not game_session or mover.universe_id != game_session.universe_id:
+                                    await manager.send_personal_message(
+                                        {"type": "error", "message": "Action non autorisée."}, websocket
+                                    )
+                                    break
+
+                                result = await set_entity_position(
+                                    session,
+                                    uuid.UUID(entity_id_str),
+                                    game_session.universe_id,
+                                    target_x,
+                                    target_y,
+                                    grid_width=game_session.grid_width,
+                                    grid_height=game_session.grid_height,
+                                )
+
+                                if result.get("status") == "success":
+                                    from src.agents.narrator import get_combat_state
+                                    c_state = await get_combat_state(session, game_session.universe_id)
+                                    await manager.broadcast_to_session({
+                                        "type": "combat_state",
+                                        "entities": c_state,
+                                        "grid_width": game_session.grid_width,
+                                        "grid_height": game_session.grid_height,
+                                    }, session_id)
+                                else:
+                                    await manager.send_personal_message(
+                                        {"type": "error", "message": result.get("message", "Impossible de déplacer le pion.")},
+                                        websocket
+                                    )
+                            except Exception as e:
+                                logger.error(f"Error processing move_entity UI_ACTION: {e}")
+                                await manager.send_personal_message(
+                                    {"type": "error", "message": "Erreur lors du déplacement du pion."},
+                                    websocket
+                                )
+                            break
+                    continue
+
                 item_id_str = payload.get("item_id")
 
                 if action and item_id_str:
+                    import uuid
                     from src.engine.models import InventorySlot, Item
                     from src.engine.tools import roll_dice
 
                     async for session in get_session():
                         try:
                             # Verify character
-                            stmt_char = select(Character).where(Character.id == uuid.UUID(character_id))
+                            stmt_char = select(Character).where(Character.id == uuid.UUID(player_id))
                             res_char = await session.execute(stmt_char)
                             char = res_char.scalars().first()
 
@@ -641,22 +927,40 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
 
 
             # Sanitize player_id and player_text to prevent log injection
-            sanitized_player_id = str(character_id).replace('\n', '\\n').replace('\r', '\\r')
+            sanitized_player_id = str(player_id).replace('\n', '\\n').replace('\r', '\\r')
             sanitized_player_text = str(player_text).replace('\n', '\\n').replace('\r', '\\r')
             logger.info(f"[{sanitized_player_id}] Dit: {sanitized_player_text}")
 
-            # Save player message (background)
-            task = asyncio.create_task(save_chat_message_background(character_id, "user", "chat", player_text))
+            # Save player message (background). In a HUMAN-GM session, the
+            # GM's own chat message IS the table's authoritative narration
+            # (see the pre-intent-analysis branch below) -- persist it with
+            # a distinguishing sender/type/category so a reconnect's chat
+            # history replay renders it the same way live clients see it.
+            if game_session_gm_type == GMType.HUMAN and is_session_gm:
+                task = asyncio.create_task(save_chat_message_background(player_id, "gm", "narrator", player_text, "GM"))
+            else:
+                task = asyncio.create_task(save_chat_message_background(player_id, "user", "chat", player_text))
             background_tasks.add(task)
             task.add_done_callback(background_tasks.discard)
 
             if player_text.strip() == "/battle":
+                if game_session_gm_type == GMType.HUMAN and not is_session_gm:
+                    await manager.send_personal_message(
+                        {"type": "error", "message": "Seul le MJ peut déclencher le mode combat dans une session à MJ humain."},
+                        websocket
+                    )
+                    continue
+                import uuid
                 async for session in get_session():
-                    statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                    statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
-                    if char:
-                        char.game_mode = "BATTLE"
+                    # game_mode / battlemap state live on the GameSession, not the
+                    # Character (see the on-connect handler above) -- Character has
+                    # no `game_mode`/`battlemap_image_url` field.
+                    game_session = await session.get(GameSession, uuid.UUID(session_id))
+                    if char and game_session:
+                        game_session.game_mode = "BATTLE"
                         char.x = 7
                         char.y = 2
 
@@ -670,11 +974,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                             npc.y = 10
                             session.add(npc)
 
+                        # Variable grid size: derive it from the actual spread of
+                        # entities placed on the map rather than a hardcoded 15x15,
+                        # with generous padding so tokens aren't hugging the edge.
+                        placed_x = [char.x] + [5 + idx * 2 for idx in range(len(npcs))]
+                        placed_y = [char.y] + [10 for _ in npcs]
+                        game_session.grid_width = max(15, min(40, max(placed_x) + 4))
+                        game_session.grid_height = max(15, min(40, max(placed_y) + 4))
+
                         session.add(char)
+                        session.add(game_session)
                         await session.commit()
 
                         sys_msg = "The player just initiated combat. Describe the current environment and the enemies present in one short paragraph."
-                        narrator_reply = await generate_narrator_response(session, character_id, sys_msg, game_mode="BATTLE")
+                        narrator_reply = await generate_narrator_response(session, player_id, sys_msg, game_mode="BATTLE")
 
                         await manager.broadcast_to_session({
                             "type": "narrator",
@@ -683,18 +996,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
         }, session_id)
 
                         # Trigger battlemap generation
-                        async def generate_and_update_battlemap(pid, desc, char_id):
+                        async def generate_and_update_battlemap(desc, gs_id):
                             bm_prompt = generate_battlemap_prompt(desc)
                             img_url = await generate_scene_image(bm_prompt)
                             if img_url:
                                 local_url = await download_image_locally(img_url, "battlemap")
                                 async for s in get_session():
-                                    st = select(Character).where(Character.id == char_id)
-                                    res = await s.execute(st)
-                                    c = res.scalars().first()
-                                    if c:
-                                        c.battlemap_image_url = local_url
-                                        s.add(c)
+                                    gs = await s.get(GameSession, gs_id)
+                                    if gs:
+                                        gs.current_battlemap_url = local_url
+                                        s.add(gs)
                                         await s.commit()
                                         await manager.broadcast_to_session({
                                             "type": "battlemap_update",
@@ -702,7 +1013,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
         }, session_id)
                                     break
 
-                        task = asyncio.create_task(generate_and_update_battlemap(character_id, narrator_reply, char.id))
+                        task = asyncio.create_task(generate_and_update_battlemap(narrator_reply, game_session.id))
                         background_tasks.add(task)
                         task.add_done_callback(background_tasks.discard)
 
@@ -710,19 +1021,31 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                         c_state = await get_combat_state(session, char.universe_id)
                         await manager.broadcast_to_session({
                             "type": "combat_state",
-                            "entities": c_state
+                            "entities": c_state,
+                            "grid_width": game_session.grid_width,
+                            "grid_height": game_session.grid_height,
         }, session_id)
                     break
                 continue
 
             if player_text.strip() == "/endbattle":
+                if game_session_gm_type == GMType.HUMAN and not is_session_gm:
+                    await manager.send_personal_message(
+                        {"type": "error", "message": "Seul le MJ peut mettre fin au combat dans une session à MJ humain."},
+                        websocket
+                    )
+                    continue
+                import uuid
                 async for session in get_session():
-                    statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                    statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
-                    if char:
-                        char.game_mode = "NARRATIVE"
-                        char.battlemap_image_url = None
+                    game_session = await session.get(GameSession, uuid.UUID(session_id))
+                    if char and game_session:
+                        game_session.game_mode = "NARRATIVE"
+                        game_session.current_battlemap_url = None
+                        game_session.grid_width = 15
+                        game_session.grid_height = 15
 
                         npc_statement = select(WorldNPCTable).where(WorldNPCTable.universe_id == char.universe_id).where(WorldNPCTable.is_in_combat == True)
                         npc_result = await session.execute(npc_statement)
@@ -731,7 +1054,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                             npc.is_in_combat = False
                             session.add(npc)
 
-                        session.add(char)
+                        session.add(game_session)
                         await session.commit()
 
                         await manager.broadcast_to_session({
@@ -744,14 +1067,50 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
         }, session_id)
                         await manager.broadcast_to_session({
                             "type": "combat_state",
-                            "entities": []
+                            "entities": [],
+                            "grid_width": game_session.grid_width,
+                            "grid_height": game_session.grid_height,
         }, session_id)
                     break
                 continue
 
+            # --- HUMAN-GM narration branch (Phase D) ---
+            # In a HUMAN-GM session, the AI never autonomously narrates or
+            # arbitrates outcomes (the human GM does, using their own chat
+            # messages as authoritative narration and the gm_consult_*
+            # UI_ACTIONs above as an on-demand advisory tool). This branches
+            # BEFORE intent analysis so the entire ROLEPLAY/ACTION/SYSTEM
+            # pipeline below -- the AI-GM path -- is completely untouched
+            # and still runs exactly as before for game_session_gm_type ==
+            # GMType.AI (the default).
+            if game_session_gm_type == GMType.HUMAN:
+                if is_session_gm:
+                    # The GM's own message is the table's official outcome:
+                    # broadcast with a distinguishing marker instead of
+                    # running it through the AI pipeline.
+                    await manager.broadcast_to_session({
+                        "type": "narrator",
+                        "category": "GM",
+                        "message": player_text,
+                        "role": "gm",
+                    }, session_id)
+                else:
+                    # Regular player chat: still broadcast to everyone
+                    # (including the GM) so the table can see what was
+                    # said/typed, but no AI narration/arbitration follows --
+                    # the human GM decides what happens next.
+                    await manager.broadcast_to_session({
+                        "type": "chat",
+                        "category": "PLAYER",
+                        "message": player_text,
+                        "role": "player",
+                        "player_id": player_id,
+                    }, session_id)
+                continue
+
             # 2. Analyse de l'intention
             intent = analyze_player_intent(player_text)
-            logger.info(f"[{character_id}] Intention détectée: {intent.intent.value} ({intent.action_type})")
+            logger.info(f"[{player_id}] Intention détectée: {intent.intent.value} ({intent.action_type})")
 
             # 3. Aiguillage
             if intent.intent == IntentType.IGNORE:
@@ -762,9 +1121,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                 # --- ARBITRATION BLOCK ---
                 arbitration_context = ""
                 if intent.intent == IntentType.ACTION:
+                    import uuid
                     async for session in get_session():
                         # Try to find the character for this player
-                        statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                        statement = select(Character).where(Character.id == uuid.UUID(player_id))
                         result = await session.execute(statement)
                         char = result.scalars().first()
 
@@ -862,33 +1222,39 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                         break # Only need one session
                 # --- END ARBITRATION BLOCK ---
 
-                # 1. Récupération de la mémoire RAG (Lore)
-                contexte_rag = await get_relevant_context(player_text, universe_id=universe_id, filter_type='lore')
-
-                # 2. Générer le texte du Narrateur
+                # 1. Récupérer le personnage pour connaître son univers et son mode de jeu
                 async for session in get_session():
-                    statement = select(Character).where(Character.id == uuid.UUID(character_id))
+                    import uuid
+                    statement = select(Character).where(Character.id == uuid.UUID(player_id))
                     result = await session.execute(statement)
                     char = result.scalars().first()
-                    game_mode = char.game_mode if char else "NARRATIVE"
+                    game_session = await session.get(GameSession, uuid.UUID(session_id))
+                    game_mode = game_session.game_mode if game_session else "NARRATIVE"
+                    universe_id = char.universe_id if char else None
 
-                    narrator_reply = await generate_narrator_response(session, character_id, player_text, context=contexte_rag + '\n\n' + arbitration_context, game_mode=game_mode)
+                    # 2. Récupération de la mémoire RAG (Lore), filtrée par univers
+                    contexte_rag = await get_relevant_context(player_text, universe_id=universe_id, filter_type='lore')
+
+                    # 3. Générer le texte du Narrateur
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text, context=contexte_rag + '\n\n' + arbitration_context, game_mode=game_mode)
 
                     if game_mode == "BATTLE":
                         from src.agents.narrator import get_combat_state
                         c_state = await get_combat_state(session, char.universe_id)
                         await manager.broadcast_to_session({
                             "type": "combat_state",
-                            "entities": c_state
+                            "entities": c_state,
+                            "grid_width": game_session.grid_width if game_session else 15,
+                            "grid_height": game_session.grid_height if game_session else 15,
         }, session_id)
                     break # Une seule session suffit
 
-                # 3. Sauvegarder ce texte en BDD (UNE SEULE FOIS, via tâche asynchrone non-bloquante)
+                # 4. Sauvegarder ce texte en BDD (UNE SEULE FOIS, via tâche asynchrone non-bloquante)
                 task = asyncio.create_task(save_chat_message_background(None, "narrator", "narrator", narrator_reply, intent.intent.value))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
 
-                # 4. Diffuser le texte via WebSocket
+                # 5. Diffuser le texte via WebSocket
                 await manager.broadcast_to_session(
                     {
                         "type": "narrator",
@@ -897,21 +1263,32 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                     }, session_id
                 )
 
-                # 5. Appeler le scene_editor
+                # 6. Appeler le scene_editor
                 scene_decision = await analyze_scene(narrator_reply)
 
-                # 6. SI ET SEULEMENT SI la décision est GENERATE, lancer la tâche asynchrone
+                # 7. SI ET SEULEMENT SI la décision est GENERATE, lancer la tâche asynchrone
                 if scene_decision.decision == ImageDecision.GENERATE or scene_decision.decision.value == "GENERATE":
-                    task = asyncio.create_task(background_image_generation(character_id, narrator_reply, manager, session_id))
+                    task = asyncio.create_task(background_image_generation(player_id, narrator_reply, manager, session_id))
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
                 else:
                     logger.info("Scene editor decision: IGNORE")
 
+                # 8. TTS: opt-in per session (GameSession.voice_enabled, default
+                # False) -- costs a real OpenAI API call per narrator reply, so
+                # skip entirely (no call, no cost) unless explicitly enabled.
+                # narrator.py doesn't currently distinguish narration prose from
+                # quoted NPC dialogue, so the whole reply is voiced as one clip
+                # (source="narrator"); see audio_generator.py.
+                if game_session is not None and game_session.voice_enabled:
+                    task = asyncio.create_task(background_tts_generation(narrator_reply, manager, session_id, source="narrator"))
+                    background_tasks.add(task)
+                    task.add_done_callback(background_tasks.discard)
+
             elif intent.intent == IntentType.SYSTEM:
                 # Ouverture d'une session de base de données asynchrone
                 async for session in get_session():
-                    narrator_reply = await generate_narrator_response(session, character_id, player_text)
+                    narrator_reply = await generate_narrator_response(session, player_id, player_text)
 
                 # Envoi du message au joueur concerné
                 await manager.send_personal_message(
@@ -931,23 +1308,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, character_id
                 )
 
                 # Save narrator personal message (background)
-                task = asyncio.create_task(save_chat_message_background(character_id, "narrator", "narrator", narrator_reply, intent.intent.value))
+                task = asyncio.create_task(save_chat_message_background(player_id, "narrator", "narrator", narrator_reply, intent.intent.value))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
     except Exception as e:
-        logger.error(f"Erreur inattendue WebSocket pour {character_id}: {e}")
+        logger.error(f"Erreur inattendue WebSocket pour {player_id}: {e}")
         manager.disconnect(websocket, session_id)
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-# Expose images directory to frontend
-from fastapi.staticfiles import StaticFiles
-import os
-
-os.makedirs("backend/images", exist_ok=True)
-app.mount("/images", StaticFiles(directory="backend/images"), name="images")

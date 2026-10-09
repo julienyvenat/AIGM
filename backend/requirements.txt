@@ -4,7 +4,9 @@ fastapi
 uvicorn[standard]
 websockets
 sqlmodel
+alembic
 aiosqlite
+asyncpg
 pytest
 pytest-asyncio
 chromadb

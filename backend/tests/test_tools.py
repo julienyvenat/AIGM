@@ -1,16 +1,8 @@
 import pytest
 from uuid import uuid4
 from sqlmodel import select
-from src.engine.models import Character, Item, ItemType, InventorySlot, Universe
-from src.engine.tools import execute_attack, move_entity, roll_dice
-
-
-async def make_universe(db_session) -> Universe:
-    universe = Universe(name="Test Universe", description="Universe for tests")
-    db_session.add(universe)
-    await db_session.commit()
-    await db_session.refresh(universe)
-    return universe
+from src.engine.models import Character, InventorySlot, Item, ItemType, WorldNPCTable
+from src.engine.tools import execute_attack, move_entity, roll_dice, set_entity_position
 
 @pytest.mark.asyncio
 async def test_execute_attack_with_weapon(db_session, monkeypatch):
@@ -24,9 +16,9 @@ async def test_execute_attack_with_weapon(db_session, monkeypatch):
 
     monkeypatch.setattr("src.engine.tools.roll_dice", mock_roll_dice)
 
-    universe = await make_universe(db_session)
-    attacker = Character(universe_id=universe.id, name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30)
-    target = Character(universe_id=universe.id, name="Target", hp=10, max_hp=10, armor_class=10, speed=30)
+    universe_id = uuid4()
+    attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=universe_id)
+    target = Character(name="Target", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=universe_id)
 
     db_session.add(attacker)
     db_session.add(target)
@@ -34,11 +26,20 @@ async def test_execute_attack_with_weapon(db_session, monkeypatch):
     await db_session.refresh(attacker)
     await db_session.refresh(target)
 
-    weapon = Item(universe_id=universe.id, name="Sword", item_type=ItemType.WEAPON, attributes={"damage": "1d8"})
+    # Items belong to the universe's shared catalog and are equipped onto a
+    # character via InventorySlot; weapon damage lives in the generic
+    # `attributes` JSON field (agnostic item model, see AGENTS.md §8), not a
+    # dedicated `damage_dice` column.
+    weapon = Item(
+        universe_id=universe_id, name="Sword", item_type=ItemType.WEAPON,
+        attributes={"damage": "1d8"},
+    )
     db_session.add(weapon)
     await db_session.commit()
     await db_session.refresh(weapon)
-    db_session.add(InventorySlot(character_id=attacker.id, item_id=weapon.id, is_equipped=True))
+
+    slot = InventorySlot(character_id=attacker.id, item_id=weapon.id, is_equipped=True)
+    db_session.add(slot)
     await db_session.commit()
 
     result_str = await execute_attack(db_session, attacker.id, target.id)
@@ -58,9 +59,8 @@ async def test_execute_attack_unarmed_and_hp_not_negative(db_session, monkeypatc
 
     monkeypatch.setattr("src.engine.tools.roll_dice", mock_roll_dice)
 
-    universe = await make_universe(db_session)
-    attacker = Character(universe_id=universe.id, name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30)
-    target = Character(universe_id=universe.id, name="Weak Target", hp=2, max_hp=2, armor_class=10, speed=30)
+    attacker = Character(name="Attacker", hp=10, max_hp=10, armor_class=10, speed=30, universe_id=uuid4())
+    target = Character(name="Weak Target", hp=2, max_hp=2, armor_class=10, speed=30, universe_id=uuid4())
 
     db_session.add(attacker)
     db_session.add(target)
@@ -76,8 +76,7 @@ async def test_execute_attack_unarmed_and_hp_not_negative(db_session, monkeypatc
 
 @pytest.mark.asyncio
 async def test_move_entity_success(db_session):
-    universe = await make_universe(db_session)
-    char = Character(universe_id=universe.id, name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0, universe_id=uuid4())
     db_session.add(char)
     await db_session.commit()
     await db_session.refresh(char)
@@ -92,8 +91,7 @@ async def test_move_entity_success(db_session):
 
 @pytest.mark.asyncio
 async def test_move_entity_too_far(db_session):
-    universe = await make_universe(db_session)
-    char = Character(universe_id=universe.id, name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0, universe_id=uuid4())
     db_session.add(char)
     await db_session.commit()
     await db_session.refresh(char)
@@ -104,8 +102,7 @@ async def test_move_entity_too_far(db_session):
 
 @pytest.mark.asyncio
 async def test_move_entity_boundary(db_session):
-    universe = await make_universe(db_session)
-    char = Character(universe_id=universe.id, name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0)
+    char = Character(name="Mover", hp=10, max_hp=10, armor_class=10, speed=5, x=0, y=0, universe_id=uuid4())
     db_session.add(char)
     await db_session.commit()
     await db_session.refresh(char)
@@ -117,3 +114,70 @@ async def test_move_entity_boundary(db_session):
     assert char.x == 5
     assert char.y == 5
     assert result["status"] == "success"
+
+# --- set_entity_position: manual Battlemap token drag & drop (main.py's
+# "move_entity" UI_ACTION), as opposed to move_entity's narrated,
+# speed-limited movement above. No speed check, but bounded to the grid and
+# scoped to the caller's universe. ---
+
+@pytest.mark.asyncio
+async def test_set_entity_position_moves_character_ignoring_speed(db_session):
+    universe_id = uuid4()
+    char = Character(name="Token", hp=10, max_hp=10, armor_class=10, speed=1, x=0, y=0, universe_id=universe_id)
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    # Speed is 1, but manual placement is a drag-and-drop, not a narrated
+    # move, so distance is not limited by speed.
+    result = await set_entity_position(db_session, char.id, universe_id, 12, 9, grid_width=15, grid_height=15)
+
+    await db_session.refresh(char)
+    assert result["status"] == "success"
+    assert char.x == 12
+    assert char.y == 9
+
+@pytest.mark.asyncio
+async def test_set_entity_position_moves_npc(db_session):
+    universe_id = uuid4()
+    npc = WorldNPCTable(universe_id=universe_id, nom="Gobelin", description="Un gobelin.", x=0, y=0)
+    db_session.add(npc)
+    await db_session.commit()
+    await db_session.refresh(npc)
+
+    result = await set_entity_position(db_session, npc.id, universe_id, 3, 4, grid_width=15, grid_height=15)
+
+    await db_session.refresh(npc)
+    assert result["status"] == "success"
+    assert npc.x == 3
+    assert npc.y == 4
+
+@pytest.mark.asyncio
+async def test_set_entity_position_clamps_to_grid_bounds(db_session):
+    universe_id = uuid4()
+    char = Character(name="Token", hp=10, max_hp=10, armor_class=10, speed=99, x=0, y=0, universe_id=universe_id)
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    result = await set_entity_position(db_session, char.id, universe_id, 999, -50, grid_width=20, grid_height=10)
+
+    await db_session.refresh(char)
+    assert result["status"] == "success"
+    assert char.x == 19  # grid_width - 1
+    assert char.y == 0   # clamped from -50
+
+@pytest.mark.asyncio
+async def test_set_entity_position_rejects_entity_from_other_universe(db_session):
+    char = Character(name="Token", hp=10, max_hp=10, armor_class=10, speed=30, x=0, y=0, universe_id=uuid4())
+    db_session.add(char)
+    await db_session.commit()
+    await db_session.refresh(char)
+
+    result = await set_entity_position(db_session, char.id, uuid4(), 5, 5)
+
+    await db_session.refresh(char)
+    assert result["status"] == "error"
+    # Position must be untouched.
+    assert char.x == 0
+    assert char.y == 0

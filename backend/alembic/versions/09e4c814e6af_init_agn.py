@@ -187,3 +187,13 @@ def downgrade() -> None:
 
     op.drop_table('chatmessage')
     # ### end Alembic commands ###
+
+    # Postgres-only cleanup: op.create_table() with an Enum column creates a
+    # native ENUM type on Postgres (SQLite has no such concept -- there it's
+    # just a CHECK constraint, which is why this was never an issue in
+    # dev/test). op.drop_table() above drops the tables but NOT these
+    # types, so without this a downgrade-then-upgrade cycle against
+    # Postgres fails with "type already exists". checkfirst=True makes this
+    # a no-op on SQLite (and idempotent on Postgres).
+    sa.Enum(name='gamesessionstatus').drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name='itemtype').drop(op.get_bind(), checkfirst=True)
