@@ -6,3 +6,4 @@ backend/venv
 .venv/
 testenv/
 venv/
+backend/rpg_database.db
