@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import uuid
 
 from src.engine.database import get_session
+from src.engine.game_systems import get_default_game_system
 from src.engine.models import Universe, WorldNPCTable, WorldLocationTable, WorldFactionTable, Character, GameSystem
 from src.agents.universe_architect import generate_universe_from_prompt
 from src.memory.vector_db import add_to_memory, add_batch_to_memory
@@ -26,10 +27,9 @@ async def generate_universe(req: UniverseGenerateRequest, db: AsyncSession = Dep
         if not game_system:
             raise HTTPException(status_code=404, detail="GameSystem not found")
     else:
-        result = await db.execute(select(GameSystem).where(GameSystem.name == "SRD 5e Light"))
-        game_system = result.scalars().first()
+        game_system = await get_default_game_system(db)
         if not game_system:
-            raise HTTPException(status_code=500, detail="Default GameSystem 'SRD 5e Light' not found. Run the seed script.")
+            raise HTTPException(status_code=500, detail="Default GameSystem 'D&D SRD 5.2' not found.")
 
     # Create the universe and its entities
     universe, world_knowledge = await generate_universe_from_prompt(req.prompt, game_system, db)
