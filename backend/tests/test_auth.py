@@ -70,3 +70,10 @@ def test_login_failure():
     response = client.post("/auth/token", data={"username": "baduser", "password": "wrongpassword"})
     assert response.status_code == 401
     assert response.json()["detail"] == "Incorrect username or password"
+
+
+def test_register_disabled(monkeypatch):
+    monkeypatch.setenv("REGISTRATION_ENABLED", "false")
+    client = TestClient(app)
+    response = client.post("/auth/register", json={"username": "x", "password": "y"})
+    assert response.status_code == 403

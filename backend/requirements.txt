@@ -4,6 +4,7 @@ fastapi
 uvicorn[standard]
 websockets
 sqlmodel
+greenlet
 alembic
 aiosqlite
 asyncpg

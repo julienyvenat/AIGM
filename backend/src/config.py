@@ -32,3 +32,13 @@ def get_cors_origins() -> list[str]:
     origins = [origin.strip() for origin in raw.split(",")]
     origins = [origin for origin in origins if origin]
     return origins or list(DEFAULT_DEV_CORS_ORIGINS)
+
+
+def is_registration_enabled() -> bool:
+    """Whether POST /auth/register accepts new accounts.
+
+    Reads REGISTRATION_ENABLED at call time (so tests can monkeypatch it).
+    Defaults to enabled; set it to "false"/"0"/"no" in production once the
+    owner and their players have created their accounts.
+    """
+    return os.getenv("REGISTRATION_ENABLED", "true").strip().lower() not in {"false", "0", "no", "off"}

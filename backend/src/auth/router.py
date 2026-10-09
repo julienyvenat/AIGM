@@ -5,6 +5,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from src.engine.database import get_session
 from src.engine.models import User
+from src.config import is_registration_enabled
 from src.auth.utils import hash_password, verify_password, create_access_token
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -19,6 +20,9 @@ class Token(BaseModel):
 
 @auth_router.post("/register", response_model=dict)
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_session)):
+    if not is_registration_enabled():
+        raise HTTPException(status_code=403, detail="Registration is disabled")
+
     query = select(User).where(User.username == user_data.username)
     result = await session.execute(query)
     if result.scalars().first():

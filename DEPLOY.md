@@ -29,7 +29,7 @@ cp .env.production.example .env.production
 # CORS_ORIGINS, etc. -- voir les commentaires dans le fichier.
 # Générer des secrets avec : openssl rand -hex 32
 
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
 Au premier démarrage, le service `backend` exécute automatiquement les
@@ -40,8 +40,8 @@ suivants.
 Vérifier que tout tourne :
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f backend
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f backend
 ```
 
 ## Déployer une mise à jour
@@ -50,8 +50,8 @@ CI a déjà construit et poussé les nouvelles images vers GHCR sur le dernier
 merge dans `main`. Sur le NAS :
 
 ```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml pull
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
 `up -d` relance uniquement les services dont l'image a changé ; les
@@ -63,8 +63,8 @@ Pour reconstruire les images localement au lieu de les tirer de GHCR (par
 exemple avant que la CI n'ait poussé une image) :
 
 ```bash
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml build
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
 ## Sauvegarde Postgres
@@ -76,13 +76,13 @@ le backend -- pas de connexion directe depuis l'hôte sans passer par
 
 ```bash
 # /etc/cron.d/aigm-backup, ou crontab -e de l'utilisateur qui gère les conteneurs
-0 3 * * * cd /chemin/vers/AIGM && docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U aigm aigm | gzip > /chemin/vers/backups/aigm-$(date +\%Y\%m\%d).sql.gz
+0 3 * * * cd /chemin/vers/AIGM && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres pg_dump -U aigm aigm | gzip > /chemin/vers/backups/aigm-$(date +\%Y\%m\%d).sql.gz
 ```
 
 Restauration (si besoin) :
 
 ```bash
-gunzip -c /chemin/vers/backups/aigm-20260101.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres psql -U aigm aigm
+gunzip -c /chemin/vers/backups/aigm-20260101.sql.gz | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres psql -U aigm aigm
 ```
 
 Pensez à purger les archives anciennes (ex: garder 14 jours) dans le même
